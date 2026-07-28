@@ -5,12 +5,17 @@
   "description": "Fast Electron Kanban and Work Items client for Azure DevOps Server (on-premises).",
   "license": "MIT",
   "author": "Azure Fast Board",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cubersport12/azure-fast-board.git"
+  },
+  "homepage": "https://github.com/cubersport12/azure-fast-board",
   "type": "module",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "vite",
-    "build": "npm run typecheck && vite build && electron-builder",
-    "build:dir": "vite build && electron-builder --dir",
+    "build": "npm run typecheck && vite build && electron-builder --publish never",
+    "build:dir": "vite build && electron-builder --dir --publish never",
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",

@@ -6,6 +6,7 @@
   "directories": {
     "output": "release/${version}"
   },
+  "publish": null,
   "files": [
     "dist-electron",
     "dist"

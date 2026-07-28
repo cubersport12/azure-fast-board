@@ -41,9 +41,8 @@ jobs:
       - name: Build installer
         run: npm run build
         env:
-          # Unsigned CI builds are fine for internal download/install.
+          # Unsigned CI builds; release upload is handled by softprops/action-gh-release.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Read app version
         id: version
