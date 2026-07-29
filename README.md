@@ -142,13 +142,36 @@ frontend/release/<версия>/
 
 ---
 
+## Вклад и Pull Request
+
+Ветка **`main`** — главная. Прямой push в неё запрещён: работайте в отдельных ветках и мержите через PR.
+
+Подробности: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Кратко:
+
+```bash
+git checkout main && git pull
+git checkout -b feat/my-change
+# …правки, коммиты…
+git push -u origin HEAD
+gh pr create --base main --fill
+```
+
+Защиту `main` (ruleset «только через PR») один раз включает владелец:
+
+```bash
+./scripts/enable-branch-protection.sh
+```
+
+---
+
 ## CI / автосборка
 
-Workflow: [`.github/workflows/release-windows.yml`](.github/workflows/release-windows.yml)
-
-- Триггер: push в `main` или ручной запуск (**workflow_dispatch**)
-- Runner: `windows-latest`
-- Результат: GitHub Release + Artifacts с `.exe`
+| Workflow | Когда | Что делает |
+| --- | --- | --- |
+| [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | PR и push в `main` | typecheck, lint, unit-тесты |
+| [`.github/workflows/release-windows.yml`](.github/workflows/release-windows.yml) | push в `main` / вручную | Windows `.exe` + GitHub Release |
 
 ---
 
@@ -156,7 +179,10 @@ Workflow: [`.github/workflows/release-windows.yml`](.github/workflows/release-wi
 
 ```text
 azure-fast-board/
-├── .github/workflows/     # CI: сборка Windows-релизов
+├── .github/workflows/     # CI + Windows-релизы
+├── .github/PULL_REQUEST_TEMPLATE.md
+├── CONTRIBUTING.md        # ветки и PR
+├── scripts/               # enable-branch-protection.sh
 ├── frontend/              # само приложение
 │   ├── electron/main/     # трей, hotkeys, IPC, Azure REST, NTLM
 │   ├── electron/preload/  # мост window.azureFastBoard
