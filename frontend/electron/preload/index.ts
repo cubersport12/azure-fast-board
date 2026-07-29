@@ -32,12 +32,14 @@ const api: AzureFastBoardApi = {
   getWorkItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.workItemsGet, id),
   createWorkItem: (input: CreateWorkItemInput) => ipcRenderer.invoke(IPC_CHANNELS.workItemsCreate, input),
   updateWorkItem: (input: PatchWorkItemInput) => ipcRenderer.invoke(IPC_CHANNELS.workItemsUpdate, input),
-  moveWorkItem: (id: number, column: string, rev: number) =>
-    ipcRenderer.invoke(IPC_CHANNELS.workItemsMove, id, column, rev),
+  moveWorkItem: (id: number, column: string, rev: number, state?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.workItemsMove, id, column, rev, state),
   getComments: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.workItemsComments, id),
   addComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.workItemsAddComment, input),
   uploadAttachment: (id: number, file: AttachmentUpload) =>
     ipcRenderer.invoke(IPC_CHANNELS.workItemsUploadAttachment, id, file),
+  removeAttachment: (id: number, attachmentUrl: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.workItemsRemoveAttachment, id, attachmentUrl),
   fetchMedia: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.mediaFetch, url),
   getBoardColumns: () => ipcRenderer.invoke(IPC_CHANNELS.boardColumns),
   getWorkItemTypes: () => ipcRenderer.invoke(IPC_CHANNELS.workItemTypes),

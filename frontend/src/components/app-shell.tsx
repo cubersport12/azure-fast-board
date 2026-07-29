@@ -14,6 +14,7 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { useConnection, useCurrentUser } from '@/hooks/use-azure'
 import { useConnectionGate } from '@/hooks/use-connection-gate'
 import { useAppHotkeys } from '@/hooks/use-app-hotkeys'
+import { usePersistedFilters } from '@/hooks/use-persisted-filters'
 import { useTheme } from '@/hooks/use-theme'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui-store'
@@ -33,6 +34,7 @@ const SYNC_STATE_LABEL: Record<string, string> = {
 export function AppShell() {
   useAppHotkeys()
   useTheme()
+  usePersistedFilters()
   const { ready, checking, blocked, errorMessage } = useConnectionGate()
   const search = useUiStore((s) => s.search)
   const setSearch = useUiStore((s) => s.setSearch)

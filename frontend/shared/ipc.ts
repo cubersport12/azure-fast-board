@@ -40,6 +40,7 @@ export const IPC_CHANNELS = {
   workItemsComments: 'workItems:comments',
   workItemsAddComment: 'workItems:addComment',
   workItemsUploadAttachment: 'workItems:uploadAttachment',
+  workItemsRemoveAttachment: 'workItems:removeAttachment',
   mediaFetch: 'media:fetch',
   boardColumns: 'board:columns',
   workItemTypes: 'meta:workItemTypes',
@@ -88,10 +89,11 @@ export interface AzureFastBoardApi {
   getWorkItem: (id: number) => Promise<WorkItemDetail>
   createWorkItem: (input: CreateWorkItemInput) => Promise<WorkItem>
   updateWorkItem: (input: PatchWorkItemInput) => Promise<WorkItem>
-  moveWorkItem: (id: number, column: string, rev: number) => Promise<WorkItem>
+  moveWorkItem: (id: number, column: string, rev: number, state?: string) => Promise<WorkItem>
   getComments: (id: number) => Promise<WorkItemComment[]>
   addComment: (input: AddCommentInput) => Promise<WorkItemComment>
   uploadAttachment: (id: number, file: AttachmentUpload) => Promise<WorkItemDetail>
+  removeAttachment: (id: number, attachmentUrl: string) => Promise<WorkItemDetail>
   fetchMedia: (url: string) => Promise<MediaPayload>
   getBoardColumns: () => Promise<BoardColumn[]>
   getWorkItemTypes: () => Promise<WorkItemTypeInfo[]>

@@ -774,7 +774,7 @@ export class AzureClient {
       ops.push({ op: 'add', path: '/fields/System.Tags', value: input.tags.join('; ') })
     }
     if (input.boardColumn) {
-      ops.push({ op: 'add', path: '/fields/System.BoardColumn', value: input.boardColumn })
+      ops.push({ op: 'add', path: '/fields/System.State', value: input.boardColumn })
     }
     if (input.fields) {
       for (const [key, value] of Object.entries(input.fields)) {
@@ -823,11 +823,14 @@ export class AzureClient {
   }
 
   async moveWorkItem(id: number, column: string, rev: number, fallbackState?: string) {
-    const fields: Record<string, string> = {
-      'System.BoardColumn': column,
-    }
-    if (fallbackState) fields['System.State'] = fallbackState
-    return this.updateWorkItem({ id, rev, fields })
+    // System.BoardColumn is read-only on many on-prem boards; column is driven by State.
+    const nextState = (fallbackState || column).trim()
+    if (!nextState) throw new Error('Целевое состояние не задано')
+    return this.updateWorkItem({
+      id,
+      rev,
+      fields: { 'System.State': nextState },
+    })
   }
 
   async getComments(id: number): Promise<WorkItemComment[]> {
@@ -1011,6 +1014,79 @@ export class AzureClient {
           },
         },
       ]),
+    })
+
+    return this.getWorkItem(id)
+  }
+
+  async removeAttachment(id: number, attachmentUrl: string): Promise<WorkItemDetail> {
+    const current = await this.request<RawWorkItem>(
+      this.api(`/_apis/wit/workitems/${id}?$expand=relations`),
+    )
+    const relations = current.relations ?? []
+    const relationIndex = relations.findIndex((relation) => {
+      if (relation.rel !== 'AttachedFile') return false
+      const left = relation.url
+      const right = attachmentUrl
+      if (left === right) return true
+      if (left.includes(right) || right.includes(left)) return true
+      const guidRe =
+        /\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+      const leftGuid = guidRe.exec(left)?.[1]?.toLowerCase()
+      const rightGuid = guidRe.exec(right)?.[1]?.toLowerCase()
+      return Boolean(leftGuid && rightGuid && leftGuid === rightGuid)
+    })
+
+    const description = current.fields?.['System.Description']
+      ? String(current.fields['System.Description'])
+      : ''
+    // Local helper: strip matching <img> (keeps client free of frontend imports)
+    const stripImg = (html: string, target: string) => {
+      if (!html || !target.trim()) return html
+      const guidRe =
+        /\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+      const targetGuid = guidRe.exec(target)?.[1]?.toLowerCase()
+      const matchUrl = (src: string) => {
+        const left = src.trim()
+        const right = target.trim()
+        if (left === right) return true
+        const leftGuid = guidRe.exec(left)?.[1]?.toLowerCase()
+        if (targetGuid && leftGuid && targetGuid === leftGuid) return true
+        return left.includes(right) || right.includes(left)
+      }
+      return html
+        .replace(/<p>\s*(<img\b[^>]*>)\s*<\/p>|<img\b[^>]*>/gi, (chunk, wrapped?: string) => {
+          const tag = wrapped || chunk
+          const src = /src=["']([^"']+)["']/i.exec(tag)?.[1]
+          if (!src) return chunk
+          return matchUrl(src) ? '' : chunk
+        })
+        .replace(/(<p>\s*<\/p>)+/gi, '')
+        .trim()
+    }
+    const nextDescription = stripImg(description, attachmentUrl)
+    const ops: Array<Record<string, unknown>> = []
+    if (relationIndex >= 0) {
+      ops.push({ op: 'remove', path: `/relations/${relationIndex}` })
+    }
+    if (nextDescription !== description) {
+      ops.push({
+        op: 'add',
+        path: '/fields/System.Description',
+        value: nextDescription || '',
+      })
+    }
+    if (!ops.length) {
+      throw new Error('Вложение не найдено')
+    }
+
+    await this.request<RawWorkItem>(this.api(`/_apis/wit/workitems/${id}`), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json-patch+json',
+        'If-Match': String(current.rev),
+      },
+      body: JSON.stringify(ops),
     })
 
     return this.getWorkItem(id)

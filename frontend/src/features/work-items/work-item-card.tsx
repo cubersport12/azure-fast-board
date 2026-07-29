@@ -24,10 +24,11 @@ export const WorkItemCard = memo(function WorkItemCard({
   return (
     <div
       className={cn(
-        'w-full rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm dark:border-slate-700 dark:bg-slate-900',
+        'w-full cursor-grab rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm active:cursor-grabbing dark:border-slate-700 dark:bg-slate-900',
         dragging ? 'opacity-40 ring-2 ring-sky-400' : 'hover:border-sky-300 hover:shadow dark:hover:border-sky-700',
         compact && 'p-2.5',
       )}
+      style={{ touchAction: 'none' }}
       {...dragAttributes}
       {...dragListeners}
     >

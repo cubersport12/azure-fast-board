@@ -16,6 +16,14 @@ describe('shared contracts', () => {
     expect(DEFAULT_SETTINGS.globalHotkey).toContain('Shift+Space')
     expect(DEFAULT_SETTINGS.subscribedIterations).toEqual([])
     expect(DEFAULT_SETTINGS.selectedIterationPath).toBe('')
+    expect(DEFAULT_SETTINGS.lastAssignee).toBe('')
+    expect(DEFAULT_SETTINGS.filters).toEqual({
+      types: [],
+      states: [],
+      assignees: [],
+      creators: [],
+      tags: [],
+    })
   })
 
   it('strips structural Iteration node from field paths', () => {

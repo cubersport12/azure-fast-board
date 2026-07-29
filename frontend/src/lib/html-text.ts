@@ -108,3 +108,29 @@ export function descriptionImageUrls(html: string) {
   return urls
 }
 
+/** True when two media URLs refer to the same attachment (GUID / exact / containment). */
+export function mediaUrlsMatch(a: string, b: string) {
+  const left = decodeHtmlEntities(a.trim())
+  const right = decodeHtmlEntities(b.trim())
+  if (!left || !right) return false
+  if (left === right) return true
+  const guid =
+    /\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+  const leftGuid = guid.exec(left)?.[1]?.toLowerCase()
+  const rightGuid = guid.exec(right)?.[1]?.toLowerCase()
+  if (leftGuid && rightGuid && leftGuid === rightGuid) return true
+  return left.includes(right) || right.includes(left)
+}
+
+/** Drop <img> tags (and empty wrapping <p>) that match the given URL / attachment id. */
+export function removeImageFromDescription(html: string, urlOrId: string): string {
+  if (!html || !urlOrId.trim()) return html
+  const next = html.replace(/<p>\s*(<img\b[^>]*>)\s*<\/p>|<img\b[^>]*>/gi, (chunk, wrappedImg?: string) => {
+    const tag = wrappedImg || chunk
+    const src = /src=["']([^"']+)["']/i.exec(tag)?.[1]
+    if (!src) return chunk
+    return mediaUrlsMatch(decodeHtmlEntities(src), urlOrId) ? '' : chunk
+  })
+  return next.replace(/(<p>\s*<\/p>)+/gi, '').trim()
+}
+

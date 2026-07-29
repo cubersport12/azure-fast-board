@@ -41,6 +41,14 @@ export function getSettings() {
     ...settings,
     subscribedIterations,
     selectedIterationPath: normalizeIterationFieldPath(settings.selectedIterationPath),
+    lastAssignee: settings.lastAssignee ?? '',
+    filters: {
+      types: settings.filters?.types ?? [],
+      states: settings.filters?.states ?? [],
+      assignees: settings.filters?.assignees ?? [],
+      creators: settings.filters?.creators ?? [],
+      tags: settings.filters?.tags ?? [],
+    },
   }
 }
 

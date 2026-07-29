@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import {
   COMPLETED_STATES,
   DEFAULT_FILTERS,
+  EMPTY_FILTERS,
   FILTER_PRESETS,
   ME_ASSIGNEE,
   filtersForPreset,
@@ -254,7 +255,7 @@ export function WorkItemFilterBar({
             onChange={onChange}
           />
           {active && (
-            <Button size="sm" variant="ghost" onClick={() => onChange(DEFAULT_FILTERS)}>
+            <Button size="sm" variant="ghost" onClick={() => onChange(EMPTY_FILTERS)}>
               <X className="h-3.5 w-3.5" /> Сбросить
             </Button>
           )}
