@@ -67,10 +67,21 @@ export function applyWorkItemFilters(
   search: string,
   filters: WorkItemFilters,
   currentUsername?: string | null,
+  iterationPath?: string | null,
 ) {
   const q = search.trim().toLowerCase()
+  const selectedIteration = iterationPath?.trim().toLowerCase() || ''
 
   return items.filter((item) => {
+    if (selectedIteration) {
+      const itemIteration = (item.iterationPath || '').toLowerCase()
+      if (
+        itemIteration !== selectedIteration &&
+        !itemIteration.startsWith(`${selectedIteration}\\`)
+      ) {
+        return false
+      }
+    }
     if (filters.types.length && !filters.types.includes(item.type)) return false
     if (filters.states.length && !filters.states.includes(item.state)) return false
     if (filters.assignees.length) {

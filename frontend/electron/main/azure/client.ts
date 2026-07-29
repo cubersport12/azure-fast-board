@@ -12,8 +12,10 @@ import type {
   AssigneeIdentity,
   AreaPathsResult,
   AreaPathOption,
+  IterationPathsResult,
+  IterationPathOption,
 } from '../../../shared/types'
-import { parseTags } from '../../../shared/utils'
+import { parseTags, normalizeIterationFieldPath } from '../../../shared/utils'
 import { AzureDevOpsError } from './errors'
 import { applyInsecureTls, azureFetch, formatNetworkError } from './http'
 
@@ -674,7 +676,13 @@ export class AzureClient {
       ops.push({ op: 'add', path: '/fields/System.AreaPath', value: input.areaPath })
     }
     if (input.iterationPath) {
-      ops.push({ op: 'add', path: '/fields/System.IterationPath', value: input.iterationPath })
+      const iterationPath = normalizeIterationFieldPath(
+        input.iterationPath,
+        this.connection.project,
+      )
+      if (iterationPath) {
+        ops.push({ op: 'add', path: '/fields/System.IterationPath', value: iterationPath })
+      }
     }
     if (input.tags?.length) {
       ops.push({ op: 'add', path: '/fields/System.Tags', value: input.tags.join('; ') })
@@ -702,11 +710,17 @@ export class AzureClient {
   async updateWorkItem(input: PatchWorkItemInput): Promise<WorkItem> {
     const ops = Object.entries(input.fields)
       .filter(([, value]) => value !== undefined)
-      .map(([key, value]) => ({
-        op: 'add',
-        path: `/fields/${key}`,
-        value,
-      }))
+      .map(([key, value]) => {
+        let next = value
+        if (key === 'System.IterationPath' && typeof value === 'string') {
+          next = normalizeIterationFieldPath(value, this.connection.project) || null
+        }
+        return {
+          op: 'add',
+          path: `/fields/${key}`,
+          value: next,
+        }
+      })
 
     const raw = await this.request<RawWorkItem>(
       this.api(`/_apis/wit/workitems/${input.id}`),
@@ -1190,6 +1204,99 @@ export class AzureClient {
       })
 
     return { rootPath, defaultPath, areas }
+  }
+
+  async listIterationPaths(): Promise<IterationPathsResult> {
+    type ClassificationNode = {
+      name?: string
+      path?: string
+      children?: ClassificationNode[]
+    }
+
+    const toPath = (nodePath?: string, name?: string, projectName?: string) => {
+      const raw = nodePath?.trim()
+        ? nodePath.replace(/^\\+/, '').replace(/\//g, '\\')
+        : projectName && name
+          ? name === projectName
+            ? projectName
+            : `${projectName}\\${name}`
+          : name?.trim() || ''
+      return normalizeIterationFieldPath(raw, projectName)
+    }
+
+    const shortName = (path: string, root?: string) => {
+      if (root && path.toLowerCase() === root.toLowerCase()) return path
+      if (root && path.toLowerCase().startsWith(`${root.toLowerCase()}\\`)) {
+        return path.slice(root.length + 1)
+      }
+      const parts = path.split('\\')
+      return parts[parts.length - 1] || path
+    }
+
+    const project = this.connection.project
+    let iterations: IterationPathOption[] = []
+    let rootPath: string | undefined
+
+    try {
+      const root = await this.request<ClassificationNode>(
+        this.api('/_apis/wit/classificationnodes/Iterations?$depth=14'),
+      )
+      rootPath = toPath(root.path, root.name, project) || project
+
+      const walk = (node: ClassificationNode) => {
+        const path = toPath(node.path, node.name, project)
+        if (path && (!rootPath || path.toLowerCase() !== rootPath.toLowerCase())) {
+          iterations.push({ path, name: shortName(path, rootPath) })
+        }
+        for (const child of node.children ?? []) walk(child)
+      }
+      walk(root)
+    } catch {
+      iterations = []
+    }
+
+    // Prefer team iterations when available (current/upcoming sprints).
+    try {
+      const team = this.connection.team || project
+      const teamIterations = await this.request<{
+        value?: Array<{ path?: string; name?: string }>
+      }>(this.api(`/${encodeURIComponent(team)}/_apis/work/teamsettings/iterations`))
+      const fromTeam = (teamIterations.value ?? [])
+        .map((entry) => {
+          const path = normalizeIterationFieldPath(entry.path, project)
+          if (!path) return null
+          return { path, name: entry.name?.trim() || shortName(path, rootPath) }
+        })
+        .filter((entry): entry is IterationPathOption => Boolean(entry))
+
+      if (fromTeam.length) {
+        const byPath = new Map(iterations.map((item) => [item.path.toLowerCase(), item]))
+        for (const item of fromTeam) {
+          if (!byPath.has(item.path.toLowerCase())) iterations.push(item)
+        }
+        const teamKeys = new Set(fromTeam.map((item) => item.path.toLowerCase()))
+        iterations.sort((a, b) => {
+          const aTeam = teamKeys.has(a.path.toLowerCase()) ? 0 : 1
+          const bTeam = teamKeys.has(b.path.toLowerCase()) ? 0 : 1
+          if (aTeam !== bTeam) return aTeam - bTeam
+          return a.name.localeCompare(b.name, 'ru')
+        })
+      } else {
+        iterations.sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      }
+    } catch {
+      iterations.sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    }
+
+    const seen = new Set<string>()
+    iterations = iterations.filter((item) => {
+      const key = item.path.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+    return { rootPath, iterations }
   }
 
   async getWorkItemTypes(): Promise<WorkItemTypeInfo[]> {

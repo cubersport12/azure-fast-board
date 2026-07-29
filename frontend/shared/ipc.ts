@@ -14,6 +14,7 @@ import type {
   SyncStatus,
   AssigneeIdentity,
   AreaPathsResult,
+  IterationPathsResult,
   WorkItem,
   WorkItemComment,
   WorkItemDetail,
@@ -46,6 +47,7 @@ export const IPC_CHANNELS = {
   assigneesSearch: 'meta:assigneesSearch',
   currentUser: 'meta:currentUser',
   areaPaths: 'meta:areaPaths',
+  iterationPaths: 'meta:iterationPaths',
   viewsList: 'views:list',
   viewsSave: 'views:save',
   viewsDelete: 'views:delete',
@@ -97,6 +99,7 @@ export interface AzureFastBoardApi {
   searchAssignees: (query: string) => Promise<AssigneeIdentity[]>
   getCurrentUser: () => Promise<AssigneeIdentity>
   listAreaPaths: () => Promise<AreaPathsResult>
+  listIterationPaths: () => Promise<IterationPathsResult>
   listViews: () => Promise<SavedView[]>
   saveView: (view: SavedView) => Promise<SavedView[]>
   deleteView: (id: string) => Promise<SavedView[]>

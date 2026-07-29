@@ -6,6 +6,7 @@ import type {
   BoardColumn,
   ConnectionConfig,
   CreateWorkItemInput,
+  IterationPathsResult,
   PatchWorkItemInput,
   WorkItem,
   WorkItemDetail,
@@ -22,6 +23,7 @@ export const queryKeys = {
   assignees: ['assignees'] as const,
   currentUser: ['currentUser'] as const,
   areaPaths: ['areaPaths'] as const,
+  iterationPaths: ['iterationPaths'] as const,
   connection: ['connection'] as const,
   settings: ['settings'] as const,
   views: ['views'] as const,
@@ -94,6 +96,16 @@ export function useAreaPaths() {
   })
 }
 
+export function useIterationPaths() {
+  const ready = useUiStore((s) => s.connectionReady)
+  return useQuery<IterationPathsResult>({
+    queryKey: queryKeys.iterationPaths,
+    queryFn: () => requireAzureApi().listIterationPaths(),
+    enabled: ready,
+    staleTime: 5 * 60_000,
+  })
+}
+
 export function useConnection() {
   return useQuery<ConnectionConfig | null>({
     queryKey: queryKeys.connection,
@@ -108,10 +120,26 @@ export function useSettings() {
   })
 }
 
+export function useUpdateSettings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: Partial<AppSettings>) => requireAzureApi().updateSettings(patch),
+    onSuccess: (settings) => {
+      qc.setQueryData(queryKeys.settings, settings)
+    },
+  })
+}
+
 export function useCreateWorkItem() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (input: CreateWorkItemInput) => requireAzureApi().createWorkItem(input),
+    mutationFn: (input: CreateWorkItemInput) => {
+      const selected = qc.getQueryData<AppSettings>(queryKeys.settings)?.selectedIterationPath?.trim()
+      return requireAzureApi().createWorkItem({
+        ...input,
+        iterationPath: input.iterationPath?.trim() || selected || undefined,
+      })
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.workItems })
     },

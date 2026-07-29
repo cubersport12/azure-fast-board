@@ -15,7 +15,7 @@ import { memo, useMemo, useState } from 'react'
 import type { BoardColumn, WorkItem } from '../../../shared/types'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Button } from '@/components/ui/button'
-import { useBoardColumns, useConnection, useMoveWorkItem, useWorkItems } from '@/hooks/use-azure'
+import { useBoardColumns, useConnection, useMoveWorkItem, useSettings, useWorkItems } from '@/hooks/use-azure'
 import { applyWorkItemFilters } from '@/lib/work-item-filters'
 import { useUiStore } from '@/stores/ui-store'
 import { WorkItemCard } from '@/features/work-items/work-item-card'
@@ -85,6 +85,7 @@ export function BoardPage() {
   const { data: items = [], isLoading } = useWorkItems()
   const { data: columns = [] } = useBoardColumns()
   const { data: connection } = useConnection()
+  const { data: settings } = useSettings()
   const move = useMoveWorkItem()
   const search = useUiStore((s) => s.search)
   const filters = useUiStore((s) => s.filters)
@@ -99,8 +100,15 @@ export function BoardPage() {
   )
 
   const filtered = useMemo(
-    () => applyWorkItemFilters(items, search, filters, connection?.username),
-    [items, search, filters, connection?.username],
+    () =>
+      applyWorkItemFilters(
+        items,
+        search,
+        filters,
+        connection?.username,
+        settings?.selectedIterationPath,
+      ),
+    [items, search, filters, connection?.username, settings?.selectedIterationPath],
   )
 
   const grouped = useMemo(() => {

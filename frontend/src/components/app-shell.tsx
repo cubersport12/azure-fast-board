@@ -21,6 +21,7 @@ import { CommandPalette } from '@/features/command-palette/command-palette'
 import { ConnectionDialog } from '@/features/connection/connection-dialog'
 import { QuickCreateDialog } from '@/features/quick-create/quick-create-dialog'
 import { SettingsDialog, ShortcutsDialog } from '@/features/settings/settings-dialogs'
+import { SprintNav } from '@/components/sprint-nav'
 
 const SYNC_STATE_LABEL: Record<string, string> = {
   idle: 'Готово',
@@ -53,7 +54,7 @@ export function AppShell() {
             {connection ? `${connection.project} · ${connection.collection}` : 'Нет подключения'}
           </div>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-2">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
           <NavItem to="/board" icon={<Columns3 className="h-4 w-4" />} label="Канбан" disabled={!ready} />
           <NavItem
             to="/work-items"
@@ -61,6 +62,7 @@ export function AppShell() {
             label="Рабочие элементы"
             disabled={!ready}
           />
+          <SprintNav disabled={!ready} />
         </nav>
         <div className="space-y-1 border-t border-slate-100 p-2 dark:border-slate-800">
           <Button variant="ghost" className="w-full justify-start" onClick={() => setConnectionOpen(true)}>

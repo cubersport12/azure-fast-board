@@ -42,6 +42,12 @@ export interface ConnectionTestResult {
   apiVersion?: string
 }
 
+/** Locally subscribed sprint/iteration (personal preference, not TFS team settings). */
+export interface SubscribedIteration {
+  path: string
+  name: string
+}
+
 export interface AppSettings {
   launchMinimized: boolean
   hideToTrayOnClose: boolean
@@ -51,6 +57,10 @@ export interface AppSettings {
   defaultView: 'board' | 'list'
   pollIntervalMs: number
   insecureTls: boolean
+  /** Personal sprint subscriptions (paths). */
+  subscribedIterations: SubscribedIteration[]
+  /** Empty = «Не выбрано» (show all work items). */
+  selectedIterationPath: string
 }
 
 export interface WorkItem {
@@ -193,6 +203,17 @@ export interface AreaPathsResult {
   areas: AreaPathOption[]
 }
 
+/** Azure DevOps Iteration Path (System.IterationPath). */
+export interface IterationPathOption {
+  path: string
+  name: string
+}
+
+export interface IterationPathsResult {
+  rootPath?: string
+  iterations: IterationPathOption[]
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   launchMinimized: true,
   hideToTrayOnClose: true,
@@ -202,6 +223,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultView: 'board',
   pollIntervalMs: 30000,
   insecureTls: false,
+  subscribedIterations: [],
+  selectedIterationPath: '',
 }
 
 export const DEFAULT_CONNECTION: ConnectionConfig = {

@@ -6,8 +6,9 @@ import { PendingImageStrip } from '@/components/pending-image-strip'
 import { AuthenticatedHtml, AuthenticatedImage } from '@/components/authenticated-media'
 import { Button } from '@/components/ui/button'
 import { Badge, Input, Textarea } from '@/components/ui/primitives'
-import { queryKeys, useUpdateWorkItem, useWorkItem, useWorkItemTypes } from '@/hooks/use-azure'
+import { queryKeys, useIterationPaths, useSettings, useUpdateWorkItem, useWorkItem, useWorkItemTypes } from '@/hooks/use-azure'
 import { requireAzureApi } from '@/lib/azure-api'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
   extractImageFromClipboardEvent,
   renderCommentHtml,
@@ -28,10 +29,13 @@ export function WorkItemDetailPage() {
   const navigate = useNavigate()
   const { data, isLoading, refetch } = useWorkItem(workItemId)
   const { data: types = [] } = useWorkItemTypes()
+  const { data: settings } = useSettings()
+  const { data: iterationPaths } = useIterationPaths()
   const update = useUpdateWorkItem()
   const qc = useQueryClient()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [iterationPath, setIterationPath] = useState('')
   const [comment, setComment] = useState('')
   const [commentImages, setCommentImages] = useState<PendingImage[]>([])
   const [descriptionImages, setDescriptionImages] = useState<PendingImage[]>([])
@@ -40,12 +44,43 @@ export function WorkItemDetailPage() {
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [savingBody, setSavingBody] = useState(false)
 
+  const selectedIteration = settings?.selectedIterationPath?.trim() || ''
+
   useEffect(() => {
     if (!data || dirty) return
     setTitle(data.title)
     setDescription(htmlToPlainText(data.description ?? ''))
+    setIterationPath(data.iterationPath || '')
     setDescriptionImages([])
   }, [data, dirty])
+
+  const iterationOptions = useMemo(() => {
+    const fromApi = iterationPaths?.iterations ?? []
+    const fromSubscribed = settings?.subscribedIterations ?? []
+    const byPath = new Map<string, { value: string; label: string }>()
+    for (const entry of fromSubscribed) {
+      byPath.set(entry.path.toLowerCase(), { value: entry.path, label: entry.name })
+    }
+    for (const entry of fromApi) {
+      const key = entry.path.toLowerCase()
+      if (!byPath.has(key)) byPath.set(key, { value: entry.path, label: entry.name })
+    }
+    for (const path of [iterationPath, data?.iterationPath, selectedIteration]) {
+      const value = path?.trim()
+      if (!value) continue
+      const key = value.toLowerCase()
+      if (!byPath.has(key)) {
+        byPath.set(key, { value, label: value.split('\\').pop() || value })
+      }
+    }
+    return [...byPath.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  }, [
+    iterationPaths?.iterations,
+    settings?.subscribedIterations,
+    iterationPath,
+    data?.iterationPath,
+    selectedIteration,
+  ])
 
   const availableStates = useMemo(() => {
     if (!data) return [] as string[]
@@ -118,6 +153,7 @@ export function WorkItemDetailPage() {
     dirty &&
     (title.trim() !== (data?.title ?? '') ||
       description !== htmlToPlainText(data?.description ?? '') ||
+      iterationPath !== (data?.iterationPath || '') ||
       descriptionImages.length > 0)
 
   const saveBody = async () => {
@@ -143,13 +179,20 @@ export function WorkItemDetailPage() {
 
       html = mergePlainTextIntoDescription(html, description)
 
+      const fields: Record<string, string | number | boolean | null | undefined> = {
+        'System.Title': title.trim(),
+        'System.Description': html,
+      }
+      const nextIteration = iterationPath.trim()
+      const prevIteration = (data.iterationPath || '').trim()
+      if (nextIteration !== prevIteration) {
+        fields['System.IterationPath'] = nextIteration || null
+      }
+
       await update.mutateAsync({
         id: data.id,
         rev,
-        fields: {
-          'System.Title': title.trim(),
-          'System.Description': html,
-        },
+        fields,
       })
       setDescriptionImages([])
       setDirty(false)
@@ -328,9 +371,21 @@ export function WorkItemDetailPage() {
                 <dt className="text-slate-500 dark:text-slate-400">Область</dt>
                 <dd className="truncate text-right">{data.areaPath || '—'}</dd>
               </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Итерация</dt>
-                <dd className="truncate text-right">{data.iterationPath || '—'}</dd>
+              <div className="space-y-1">
+                <div className="text-slate-500 dark:text-slate-400">Итерация</div>
+                <SearchableSelect
+                  value={iterationPath}
+                  options={iterationOptions}
+                  onChange={(next) => {
+                    setIterationPath(next)
+                    setDirty(true)
+                  }}
+                  placeholder="Не выбрано"
+                  emptyLabel="Не выбрано"
+                  searchPlaceholder="Поиск итерации…"
+                  suggestionsLabel="Suggestions"
+                  allowEmpty
+                />
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-500 dark:text-slate-400">Колонка доски</dt>
