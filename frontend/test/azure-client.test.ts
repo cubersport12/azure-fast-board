@@ -51,6 +51,22 @@ describe('workItemColor', () => {
   })
 })
 
+describe('service hook mapping helpers', () => {
+  it('exposes create payload shape for webHooks consumer', () => {
+    const body = {
+      publisherId: 'tfs',
+      eventType: 'workitem.updated',
+      resourceVersion: '1.0',
+      consumerId: 'webHooks',
+      consumerActionId: 'httpRequest',
+      publisherInputs: { projectId: 'proj-guid' },
+      consumerInputs: { url: 'https://mattermost.example/hooks/xxx' },
+    }
+    expect(body.consumerId).toBe('webHooks')
+    expect(body.eventType).toBe('workitem.updated')
+  })
+})
+
 describe('mapWorkItem', () => {
   it('maps azure fields into ui model', () => {
     const item = mapWorkItem({

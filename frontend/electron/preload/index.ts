@@ -3,10 +3,12 @@ import { IPC_CHANNELS, type AzureFastBoardApi } from '../../shared/ipc'
 import type {
   AppSettings,
   AttachmentUpload,
+  BoardNotification,
   ConnectionConfig,
   CreateWorkItemInput,
   PatchWorkItemInput,
   SavedView,
+  ServiceHookCreateInput,
 } from '../../shared/types'
 
 function subscribe<T>(channel: string, cb: (payload: T) => void) {
@@ -59,10 +61,21 @@ const api: AzureFastBoardApi = {
   setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.autoLaunchSet, enabled),
   readClipboardImage: () => ipcRenderer.invoke(IPC_CHANNELS.clipboardReadImage),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
+  listServiceHooks: () => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksList),
+  getServiceHook: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksGet, id),
+  createServiceHook: (input: ServiceHookCreateInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.serviceHooksCreate, input),
+  deleteServiceHook: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksDelete, id),
+  testServiceHook: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksTest, id),
+  setNotificationSecrets: (secrets) =>
+    ipcRenderer.invoke(IPC_CHANNELS.notificationsSecretsSet, secrets),
+  getNotificationHistory: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsHistory),
+  testNotification: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsTest),
   onShowQuickCreate: (cb) => subscribe(IPC_CHANNELS.eventShowQuickCreate, cb),
   onShowCommandPalette: (cb) => subscribe(IPC_CHANNELS.eventShowCommandPalette, cb),
   onNavigate: (cb) => subscribe(IPC_CHANNELS.eventNavigate, cb),
   onSyncStatus: (cb) => subscribe(IPC_CHANNELS.eventSyncStatus, cb),
+  onNotification: (cb) => subscribe<BoardNotification>(IPC_CHANNELS.eventNotification, cb),
 }
 
 contextBridge.exposeInMainWorld('azureFastBoard', api)

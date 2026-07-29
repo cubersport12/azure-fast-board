@@ -7,13 +7,23 @@ import type {
   CreateWorkItemInput,
   PatchWorkItemInput,
   SavedView,
+  ServiceHookCreateInput,
   SyncStatus,
   WorkItemDetail,
 } from '../../shared/types'
 import { AzureClient } from './azure/client'
 import { applyInsecureTls } from './azure/http'
-import { clearSecrets, loadPassword, loadPat, savePassword, savePat } from './credentials'
+import {
+  clearSecrets,
+  loadPassword,
+  loadPat,
+  saveMattermostWebhookUrl,
+  savePassword,
+  savePat,
+  saveSmtpPassword,
+} from './credentials'
 import { toIpcError } from './ipc-error'
+import { NotificationService } from './notifications'
 import {
   clearConnection,
   deleteView,
@@ -26,6 +36,12 @@ import {
   setCachedWorkItems,
   updateSettings,
 } from './store'
+
+let notificationService: NotificationService | null = null
+
+export function getNotificationService() {
+  return notificationService
+}
 
 let syncStatus: SyncStatus = { state: 'idle' }
 
@@ -115,10 +131,14 @@ function withTls() {
 export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow | null) {
   withTls()
 
+  notificationService = new NotificationService(getClient, getMainWindow)
+  notificationService.start()
+
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => getSettings())
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_e, patch) => {
     const next = updateSettings(patch)
     if (next.insecureTls) applyInsecureTls(true)
+    notificationService?.restart()
     return next
   })
 
@@ -137,17 +157,22 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
         if (!pat?.trim()) throw new Error('PAT is required')
         savePat(pat.trim())
       }
-      return saveConnection({
+      const saved = saveConnection({
         ...rest,
         authMethod,
         serverUrl: normalizeServerUrl(rest.serverUrl),
         username: rest.username?.trim() || undefined,
       })
+      notificationService?.resetSnapshot()
+      notificationService?.restart()
+      return saved
     },
   )
   ipcMain.handle(IPC_CHANNELS.connectionClear, () => {
     clearSecrets()
     clearConnection()
+    notificationService?.resetSnapshot()
+    notificationService?.stop()
   })
   ipcMain.handle(IPC_CHANNELS.connectionVerify, async () => {
     try {
@@ -465,6 +490,64 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   ipcMain.handle(IPC_CHANNELS.openExternal, (_e, url: string) => {
     if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('data:')) {
       return shell.openExternal(url)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.serviceHooksList, async () => {
+    try {
+      return await requireClient().listServiceHooks()
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksGet, async (_e, id: string) => {
+    try {
+      return await requireClient().getServiceHook(String(id || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksCreate, async (_e, input: ServiceHookCreateInput) => {
+    try {
+      return await requireClient().createServiceHook(input)
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksDelete, async (_e, id: string) => {
+    try {
+      await requireClient().deleteServiceHook(String(id || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksTest, async (_e, id: string) => {
+    try {
+      return await requireClient().testServiceHook(String(id || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.notificationsSecretsSet,
+    (_e, secrets: { mattermostWebhookUrl?: string | null; smtpPassword?: string | null }) => {
+      if (secrets.mattermostWebhookUrl !== undefined) {
+        saveMattermostWebhookUrl(secrets.mattermostWebhookUrl)
+      }
+      if (secrets.smtpPassword !== undefined) {
+        saveSmtpPassword(secrets.smtpPassword)
+      }
+      return getSettings()
+    },
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsHistory, () => notificationService?.getHistory() ?? [])
+  ipcMain.handle(IPC_CHANNELS.notificationsTest, async () => {
+    try {
+      if (!notificationService) throw new Error('Notification service is not ready')
+      return await notificationService.test()
+    } catch (error) {
+      throw toIpcError(error)
     }
   })
 

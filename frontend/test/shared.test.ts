@@ -24,6 +24,10 @@ describe('shared contracts', () => {
       creators: [],
       tags: [],
     })
+    expect(DEFAULT_SETTINGS.notifications.enabled).toBe(true)
+    expect(DEFAULT_SETTINGS.notifications.providers.app.flashTaskbar).toBe(true)
+    expect(IPC_CHANNELS.serviceHooksList).toBe('serviceHooks:list')
+    expect(IPC_CHANNELS.eventNotification).toBe('event:notification')
   })
 
   it('strips structural Iteration node from field paths', () => {

@@ -8,6 +8,8 @@ const LEGACY_PAT = 'pat.enc'
 interface StoredSecrets {
   pat?: string
   password?: string
+  mattermostWebhookUrl?: string
+  smtpPassword?: string
 }
 
 function filePath() {
@@ -85,6 +87,28 @@ export function clearSecrets() {
   for (const target of [filePath(), legacyPatPath()]) {
     if (fs.existsSync(target)) fs.unlinkSync(target)
   }
+}
+
+export function saveMattermostWebhookUrl(url: string | null) {
+  const secrets = readSecrets()
+  if (url?.trim()) secrets.mattermostWebhookUrl = url.trim()
+  else delete secrets.mattermostWebhookUrl
+  writeSecrets(secrets)
+}
+
+export function loadMattermostWebhookUrl(): string | null {
+  return readSecrets().mattermostWebhookUrl || null
+}
+
+export function saveSmtpPassword(password: string | null) {
+  const secrets = readSecrets()
+  if (password) secrets.smtpPassword = password
+  else delete secrets.smtpPassword
+  writeSecrets(secrets)
+}
+
+export function loadSmtpPassword(): string | null {
+  return readSecrets().smtpPassword || null
 }
 
 /** @deprecated use clearSecrets */

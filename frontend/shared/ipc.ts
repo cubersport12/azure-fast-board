@@ -2,6 +2,7 @@ import type {
   AppSettings,
   AttachmentUpload,
   BoardColumn,
+  BoardNotification,
   ConnectionConfig,
   ConnectionCredentials,
   ConnectionTestResult,
@@ -11,6 +12,8 @@ import type {
   NamedEntity,
   PatchWorkItemInput,
   SavedView,
+  ServiceHookCreateInput,
+  ServiceHookSubscription,
   SyncStatus,
   AssigneeIdentity,
   AreaPathsResult,
@@ -60,10 +63,19 @@ export const IPC_CHANNELS = {
   autoLaunchSet: 'app:autoLaunch:set',
   clipboardReadImage: 'clipboard:readImage',
   openExternal: 'shell:openExternal',
+  serviceHooksList: 'serviceHooks:list',
+  serviceHooksGet: 'serviceHooks:get',
+  serviceHooksCreate: 'serviceHooks:create',
+  serviceHooksDelete: 'serviceHooks:delete',
+  serviceHooksTest: 'serviceHooks:test',
+  notificationsSecretsSet: 'notifications:secrets:set',
+  notificationsHistory: 'notifications:history',
+  notificationsTest: 'notifications:test',
   eventShowQuickCreate: 'event:showQuickCreate',
   eventShowCommandPalette: 'event:showCommandPalette',
   eventNavigate: 'event:navigate',
   eventSyncStatus: 'event:syncStatus',
+  eventNotification: 'event:notification',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -113,8 +125,20 @@ export interface AzureFastBoardApi {
   setAutoLaunch: (enabled: boolean) => Promise<boolean>
   readClipboardImage: () => Promise<AttachmentUpload | null>
   openExternal: (url: string) => Promise<void>
+  listServiceHooks: () => Promise<ServiceHookSubscription[]>
+  getServiceHook: (id: string) => Promise<ServiceHookSubscription>
+  createServiceHook: (input: ServiceHookCreateInput) => Promise<ServiceHookSubscription>
+  deleteServiceHook: (id: string) => Promise<void>
+  testServiceHook: (id: string) => Promise<{ ok: boolean; message: string }>
+  setNotificationSecrets: (secrets: {
+    mattermostWebhookUrl?: string | null
+    smtpPassword?: string | null
+  }) => Promise<AppSettings>
+  getNotificationHistory: () => Promise<BoardNotification[]>
+  testNotification: () => Promise<BoardNotification>
   onShowQuickCreate: (cb: () => void) => () => void
   onShowCommandPalette: (cb: () => void) => () => void
   onNavigate: (cb: (route: string) => void) => () => void
   onSyncStatus: (cb: (status: SyncStatus) => void) => () => void
+  onNotification: (cb: (notification: BoardNotification) => void) => () => void
 }

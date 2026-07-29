@@ -5,6 +5,8 @@ import type {
   ConnectionTestResult,
   CreateWorkItemInput,
   PatchWorkItemInput,
+  ServiceHookCreateInput,
+  ServiceHookSubscription,
   WorkItem,
   WorkItemComment,
   WorkItemDetail,
@@ -1497,6 +1499,144 @@ export class AzureClient {
         { name: 'Task', states: [{ name: 'To Do' }, { name: 'In Progress' }, { name: 'Done' }], fields: [] },
         { name: 'User Story', states: [{ name: 'New' }, { name: 'Active' }, { name: 'Resolved' }, { name: 'Closed' }], fields: [] },
       ]
+    }
+  }
+
+  private mapServiceHook(raw: Record<string, unknown>): ServiceHookSubscription {
+    return {
+      id: String(raw.id ?? ''),
+      url: raw.url ? String(raw.url) : undefined,
+      publisherId: String(raw.publisherId ?? ''),
+      eventType: String(raw.eventType ?? ''),
+      resourceVersion: raw.resourceVersion ? String(raw.resourceVersion) : undefined,
+      eventDescription: raw.eventDescription ? String(raw.eventDescription) : undefined,
+      consumerId: String(raw.consumerId ?? ''),
+      consumerActionId: String(raw.consumerActionId ?? ''),
+      actionDescription: raw.actionDescription ? String(raw.actionDescription) : undefined,
+      publisherInputs: (raw.publisherInputs as Record<string, string> | undefined) ?? undefined,
+      consumerInputs: (raw.consumerInputs as Record<string, string> | undefined) ?? undefined,
+      status: raw.status != null ? String(raw.status) : undefined,
+      createdDate: raw.createdDate ? String(raw.createdDate) : undefined,
+      modifiedDate: raw.modifiedDate ? String(raw.modifiedDate) : undefined,
+    }
+  }
+
+  async resolveProjectId(): Promise<string> {
+    if (!this.connection.project) {
+      throw new AzureDevOpsError('Project is required for service hooks', 400)
+    }
+    const projects = await this.listProjects()
+    const match = projects.find(
+      (project) => project.name.toLowerCase() === this.connection.project.toLowerCase(),
+    )
+    if (!match?.id) {
+      throw new AzureDevOpsError(`Project not found: ${this.connection.project}`, 404)
+    }
+    return match.id
+  }
+
+  /**
+   * Service Hooks REST API (collection scope).
+   * Azure DevOps has no public WebSocket/Web PubSub feed for board events —
+   * subscriptions deliver HTTP POSTs to a consumer URL.
+   * @see https://learn.microsoft.com/en-us/rest/api/azure/devops/hooks/subscriptions
+   */
+  async listServiceHooks(): Promise<ServiceHookSubscription[]> {
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    const payload = await this.request<{ value?: Array<Record<string, unknown>> }>(
+      this.collectionApi('/_apis/hooks/subscriptions', apiVersion),
+    )
+    const projectId = await this.resolveProjectId().catch(() => null)
+    const items = (payload.value ?? []).map((item) => this.mapServiceHook(item))
+    if (!projectId) return items
+    return items.filter((item) => {
+      const pid = item.publisherInputs?.projectId
+      return !pid || pid.toLowerCase() === projectId.toLowerCase()
+    })
+  }
+
+  async getServiceHook(id: string): Promise<ServiceHookSubscription> {
+    if (!id?.trim()) throw new AzureDevOpsError('Subscription id is required', 400)
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    const raw = await this.request<Record<string, unknown>>(
+      this.collectionApi(`/_apis/hooks/subscriptions/${encodeURIComponent(id)}`, apiVersion),
+    )
+    return this.mapServiceHook(raw)
+  }
+
+  async createServiceHook(input: ServiceHookCreateInput): Promise<ServiceHookSubscription> {
+    if (!input.webhookUrl?.trim()) {
+      throw new AzureDevOpsError('webhookUrl is required', 400)
+    }
+    if (!input.eventType?.trim()) {
+      throw new AzureDevOpsError('eventType is required', 400)
+    }
+
+    const projectId = await this.resolveProjectId()
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    const body = {
+      publisherId: 'tfs',
+      eventType: input.eventType,
+      resourceVersion: input.resourceVersion || '1.0',
+      consumerId: 'webHooks',
+      consumerActionId: 'httpRequest',
+      publisherInputs: {
+        projectId,
+        ...(input.publisherInputs ?? {}),
+      },
+      consumerInputs: {
+        url: input.webhookUrl.trim(),
+      },
+    }
+
+    const raw = await this.request<Record<string, unknown>>(
+      this.collectionApi('/_apis/hooks/subscriptions', apiVersion),
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    )
+    return this.mapServiceHook(raw)
+  }
+
+  async deleteServiceHook(id: string): Promise<void> {
+    if (!id?.trim()) throw new AzureDevOpsError('Subscription id is required', 400)
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    await this.request<void>(
+      this.collectionApi(`/_apis/hooks/subscriptions/${encodeURIComponent(id)}`, apiVersion),
+      { method: 'DELETE' },
+    )
+  }
+
+  /**
+   * Ask Azure DevOps to send a test notification for an existing subscription.
+   * Uses Notifications - Query / publisher test endpoints when available.
+   */
+  async testServiceHook(id: string): Promise<{ ok: boolean; message: string }> {
+    const subscription = await this.getServiceHook(id)
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    try {
+      await this.request<unknown>(this.collectionApi('/_apis/hooks/notifications', apiVersion), {
+        method: 'POST',
+        body: JSON.stringify({
+          subscriptionId: subscription.id,
+          details: {
+            publisherId: subscription.publisherId,
+            consumerId: subscription.consumerId,
+            consumerActionId: subscription.consumerActionId,
+            eventType: subscription.eventType,
+            publisherInputs: subscription.publisherInputs,
+            consumerInputs: subscription.consumerInputs,
+          },
+        }),
+      })
+      return { ok: true, message: 'Тестовое уведомление отправлено' }
+    } catch (error) {
+      // Fallback: re-create is not ideal; report the API error.
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Не удалось отправить тест',
+      }
     }
   }
 }

@@ -26,6 +26,7 @@
 - Быстрое создание (тип, Area, исполнитель, описание, скриншоты)
 - Карточка work item: описание, состояние, комментарии, вложения
 - Трей и глобальные горячие клавиши
+- Уведомления по доске (приложение / Mattermost / почта) и API Service Hooks
 - Светлая / тёмная тема
 - Работа **только после успешного подключения** к серверу
 
@@ -84,8 +85,22 @@ npm run dev
 
 - **Work Items** — Read & write
 - **Project and Team** — Read
+- **Service Hooks** (опционально) — Edit / View subscriptions, если управляете подписками из приложения
 
 Вставляйте **сырой** PAT или `_password` из `.npmrc` (это Base64 от сырого токена — приложение развернёт).
+
+### Уведомления
+
+У Azure DevOps **нет** клиентского WebSocket / Azure Web PubSub для событий доски. События доставляются через [Service Hooks](https://learn.microsoft.com/en-us/azure/devops/service-hooks/overview) (HTTP POST на webhook) либо через опрос изменений в приложении.
+
+В **Настройках → Уведомления**:
+
+- провайдер **приложение** — toast и классическое мигание иконки на панели задач (окно не разворачивается, если оно в трее);
+- **Mattermost** — Incoming Webhook;
+- **почта** — SMTP;
+- блок **Service Hooks** — list / create / delete / test подписок на сервере (`/_apis/hooks/subscriptions`).
+
+На on‑prem webhook должен быть **достижим с Azure DevOps Server** (например URL Mattermost). Локальный `localhost` десктоп-клиента сервер обычно не видит.
 
 На on‑prem с IIS Basic Auth авторизация как у npm/Artifacts:
 

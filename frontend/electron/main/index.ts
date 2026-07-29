@@ -250,6 +250,10 @@ async function createWindow() {
   })
 
   attachLayoutIndependentShortcuts(win)
+
+  win.on('focus', () => {
+    win?.flashFrame(false)
+  })
 }
 
 app.whenReady().then(async () => {
