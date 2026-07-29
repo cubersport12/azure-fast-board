@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PendingImageStrip } from '@/components/pending-image-strip'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { Dialog, Input, Label, Textarea } from '@/components/ui/primitives'
+import { Badge, Dialog, Input, Label, Textarea } from '@/components/ui/primitives'
 import {
   useAreaPaths,
   useAssignees,
   useConnection,
   useCreateWorkItem,
+  useWorkItems,
   useWorkItemTypes,
 } from '@/hooks/use-azure'
 import {
@@ -16,6 +18,7 @@ import {
   type PendingImage,
 } from '@/lib/clipboard-image'
 import { requireAzureApi } from '@/lib/azure-api'
+import { uniqueOptions } from '@/lib/work-item-filters'
 import type { AssigneeIdentity } from '../../../shared/types'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -36,12 +39,15 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const { data: connection } = useConnection()
   const { data: teamAssignees = [] } = useAssignees()
   const { data: areaPaths } = useAreaPaths()
+  const { data: workItems = [] } = useWorkItems()
   const create = useCreateWorkItem()
   const [type, setType] = useState('Bug')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assignedTo, setAssignedTo] = useState('')
   const [areaPath, setAreaPath] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [extraTags, setExtraTags] = useState<string[]>([])
   const [images, setImages] = useState<PendingImage[]>([])
   const [people, setPeople] = useState<AssigneeIdentity[]>([])
   const [searching, setSearching] = useState(false)
@@ -54,6 +60,34 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const areas = areaPaths?.areas ?? []
   const rootPath = areaPaths?.rootPath || connection?.project || ''
   const defaultAreaPath = areaPaths?.defaultPath || rootPath
+
+  const knownTags = useMemo(() => {
+    const fromItems = uniqueOptions(workItems).tags
+    return [...new Set([...fromItems, ...extraTags])].sort((a, b) => a.localeCompare(b))
+  }, [workItems, extraTags])
+
+  const tagOptions = useMemo(
+    () =>
+      knownTags
+        .filter((tag) => !tags.some((selected) => selected.toLowerCase() === tag.toLowerCase()))
+        .map((tag) => ({ value: tag, label: tag })),
+    [knownTags, tags],
+  )
+
+  const addTag = useCallback((tag: string) => {
+    const next = tag.trim()
+    if (!next) return
+    setTags((current) =>
+      current.some((entry) => entry.toLowerCase() === next.toLowerCase())
+        ? current
+        : [...current, next],
+    )
+    setExtraTags((current) =>
+      current.some((entry) => entry.toLowerCase() === next.toLowerCase())
+        ? current
+        : [...current, next],
+    )
+  }, [])
 
   const defaultAssignee = useMemo(() => {
     const username = connection?.username?.trim()
@@ -72,6 +106,8 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       setDescription('')
       setAssignedTo(defaultAssignee)
       setAreaPath(defaultAreaPath || rootPath)
+      setTags([])
+      setExtraTags([])
       setImages([])
       setType(types.find((entry) => entry.name === 'Bug')?.name || types[0]?.name || 'Bug')
       setPeople(teamAssignees)
@@ -149,6 +185,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       description: description.trim() || undefined,
       assignedTo: assignedTo.trim() || undefined,
       areaPath: areaPath.trim() || undefined,
+      tags: tags.length ? tags : undefined,
       boardColumn: defaultColumn,
       attachments: images.map(({ fileName, mimeType, dataBase64 }) => ({
         fileName,
@@ -215,6 +252,41 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
               placeholder="Не назначен"
               emptyLabel="Не назначен"
               searchPlaceholder={searching ? 'Поиск…' : 'Найти человека…'}
+            />
+          </div>
+          <div className="space-y-1 col-span-2">
+            <Label htmlFor="quick-create-tags">Тэг</Label>
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pb-1">
+                {tags.map((tag) => (
+                  <Badge key={tag} className="gap-1 pr-1">
+                    {tag}
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700"
+                      aria-label={`Удалить тэг ${tag}`}
+                      onClick={() => setTags((current) => current.filter((entry) => entry !== tag))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <SearchableSelect
+              id="quick-create-tags"
+              value=""
+              options={tagOptions}
+              onChange={(next) => {
+                if (next) addTag(next)
+              }}
+              onCreate={addTag}
+              placeholder="Добавить тэг"
+              emptyLabel="Без тэга"
+              searchPlaceholder="Поиск тэга…"
+              suggestionsLabel="Suggestions"
+              createLabel="Создать новый тэг"
+              allowEmpty={false}
             />
           </div>
         </div>
