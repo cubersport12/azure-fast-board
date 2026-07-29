@@ -10,6 +10,7 @@ interface StoredSecrets {
   password?: string
   mattermostWebhookUrl?: string
   smtpPassword?: string
+  notificationsApiToken?: string
 }
 
 function filePath() {
@@ -109,6 +110,17 @@ export function saveSmtpPassword(password: string | null) {
 
 export function loadSmtpPassword(): string | null {
   return readSecrets().smtpPassword || null
+}
+
+export function saveNotificationsApiToken(token: string | null) {
+  const secrets = readSecrets()
+  if (token?.trim()) secrets.notificationsApiToken = token.trim()
+  else delete secrets.notificationsApiToken
+  writeSecrets(secrets)
+}
+
+export function loadNotificationsApiToken(): string | null {
+  return readSecrets().notificationsApiToken || null
 }
 
 /** @deprecated use clearSecrets */

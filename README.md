@@ -91,16 +91,29 @@ npm run dev
 
 ### Уведомления
 
-У Azure DevOps **нет** клиентского WebSocket / Azure Web PubSub для событий доски. События доставляются через [Service Hooks](https://learn.microsoft.com/en-us/azure/devops/service-hooks/overview) (HTTP POST на webhook) либо через опрос изменений в приложении.
+Схема:
 
-В **Настройках → Уведомления**:
+```text
+Azure DevOps Server  --Service Hook POST-->  notifications-api  --WebSocket-->  Electron / фронты
+```
 
-- провайдер **приложение** — toast и классическое мигание иконки на панели задач (окно не разворачивается, если оно в трее);
-- **Mattermost** — Incoming Webhook;
-- **почта** — SMTP;
-- блок **Service Hooks** — list / create / delete / test подписок на сервере (`/_apis/hooks/subscriptions`).
+У Azure DevOps **нет** клиентского WebSocket для доски. Мост — сервис [`notifications-api`](notifications-api/README.md):
 
-На on‑prem webhook должен быть **достижим с Azure DevOps Server** (например URL Mattermost). Локальный `localhost` десктоп-клиента сервер обычно не видит.
+1. ADO шлёт HTTP Service Hook на `POST /hooks/azure`
+2. API публикует событие всем подписчикам `WS /ws`
+3. Desktop-клиент показывает toast и мигает иконкой на панели задач (окно из трея не разворачивается)
+
+Запуск API:
+
+```bash
+cd notifications-api
+npm install
+npm run dev
+```
+
+В **Настройках → Уведомления** укажите URL API. Service Hook в ADO (через UI или REST) должен указывать на `{apiUrl}/hooks/azure`.
+
+Дополнительно: провайдеры Mattermost / SMTP; локальный poll — fallback, если WebSocket недоступен.
 
 На on‑prem с IIS Basic Auth авторизация как у npm/Artifacts:
 
@@ -208,8 +221,9 @@ azure-fast-board/
 ├── .github/PULL_REQUEST_TEMPLATE.md
 ├── CONTRIBUTING.md        # ветки и PR
 ├── scripts/               # enable-branch-protection.sh
-├── frontend/              # само приложение
-│   ├── electron/main/     # трей, hotkeys, IPC, Azure REST, NTLM
+├── notifications-api/     # Service Hooks → WebSocket fan-out
+├── frontend/              # Electron-приложение
+│   ├── electron/main/     # трей, hotkeys, IPC, Azure REST, NTLM, WS-клиент
 │   ├── electron/preload/  # мост window.azureFastBoard
 │   ├── shared/            # типы и контракты IPC
 │   ├── src/features/      # UI: board, work items, connection, …

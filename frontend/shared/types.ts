@@ -87,6 +87,11 @@ export interface NotificationSettings {
   enabled: boolean
   /** Only notify about items assigned to the current user (and new assignments). */
   onlyAssignedToMe: boolean
+  /**
+   * Base URL of notifications-api (e.g. http://host:8787).
+   * When set, Electron subscribes via WebSocket; local poll is a fallback.
+   */
+  apiUrl: string
   events: Record<NotificationEventType, boolean>
   providers: {
     app: AppNotificationProviderSettings
@@ -156,6 +161,8 @@ export interface BoardNotification {
   workItemId?: number
   workItemTitle?: string
   createdAt: string
+  /** Where the event came from. */
+  source?: 'poll' | 'websocket' | 'test' | 'azure-service-hook'
 }
 
 export interface WorkItem {
@@ -314,6 +321,7 @@ export interface IterationPathsResult {
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
   onlyAssignedToMe: true,
+  apiUrl: '',
   events: {
     'workitem.created': true,
     'workitem.updated': true,

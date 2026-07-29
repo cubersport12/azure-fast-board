@@ -21,6 +21,7 @@ import {
   savePassword,
   savePat,
   saveSmtpPassword,
+  saveNotificationsApiToken,
 } from './credentials'
 import { toIpcError } from './ipc-error'
 import { NotificationService } from './notifications'
@@ -531,13 +532,24 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
 
   ipcMain.handle(
     IPC_CHANNELS.notificationsSecretsSet,
-    (_e, secrets: { mattermostWebhookUrl?: string | null; smtpPassword?: string | null }) => {
+    (
+      _e,
+      secrets: {
+        mattermostWebhookUrl?: string | null
+        smtpPassword?: string | null
+        notificationsApiToken?: string | null
+      },
+    ) => {
       if (secrets.mattermostWebhookUrl !== undefined) {
         saveMattermostWebhookUrl(secrets.mattermostWebhookUrl)
       }
       if (secrets.smtpPassword !== undefined) {
         saveSmtpPassword(secrets.smtpPassword)
       }
+      if (secrets.notificationsApiToken !== undefined) {
+        saveNotificationsApiToken(secrets.notificationsApiToken)
+      }
+      notificationService?.restart()
       return getSettings()
     },
   )

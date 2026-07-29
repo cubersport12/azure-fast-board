@@ -25,6 +25,7 @@ describe('shared contracts', () => {
       tags: [],
     })
     expect(DEFAULT_SETTINGS.notifications.enabled).toBe(true)
+    expect(DEFAULT_SETTINGS.notifications.apiUrl).toBe('')
     expect(DEFAULT_SETTINGS.notifications.providers.app.flashTaskbar).toBe(true)
     expect(IPC_CHANNELS.serviceHooksList).toBe('serviceHooks:list')
     expect(IPC_CHANNELS.eventNotification).toBe('event:notification')

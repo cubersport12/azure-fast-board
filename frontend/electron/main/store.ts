@@ -52,6 +52,7 @@ function mergeNotificationSettings(
   return {
     enabled: raw?.enabled ?? base.enabled,
     onlyAssignedToMe: raw?.onlyAssignedToMe ?? base.onlyAssignedToMe,
+    apiUrl: raw?.apiUrl?.trim() ?? base.apiUrl,
     events,
     providers,
   }
@@ -140,6 +141,7 @@ export function updateSettings(patch: Partial<AppSettings>) {
     notifications: {
       enabled: notificationsSource.enabled,
       onlyAssignedToMe: notificationsSource.onlyAssignedToMe,
+      apiUrl: notificationsSource.apiUrl?.trim() || '',
       events: { ...DEFAULT_NOTIFICATION_SETTINGS.events, ...notificationsSource.events },
       providers: {
         app: {

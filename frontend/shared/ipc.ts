@@ -133,6 +133,7 @@ export interface AzureFastBoardApi {
   setNotificationSecrets: (secrets: {
     mattermostWebhookUrl?: string | null
     smtpPassword?: string | null
+    notificationsApiToken?: string | null
   }) => Promise<AppSettings>
   getNotificationHistory: () => Promise<BoardNotification[]>
   testNotification: () => Promise<BoardNotification>

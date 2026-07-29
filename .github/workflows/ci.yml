@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - 'notifications-api/**'
       - '.github/workflows/ci.yml'
 
 permissions:
@@ -43,6 +44,33 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+  notifications-api:
+    name: Notifications API checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notifications-api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: notifications-api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Unit tests
         run: npm test

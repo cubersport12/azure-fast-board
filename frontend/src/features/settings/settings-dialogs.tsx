@@ -26,6 +26,7 @@ export function SettingsDialog() {
   const [autoLaunch, setAutoLaunch] = useState(false)
   const [mattermostUrl, setMattermostUrl] = useState('')
   const [smtpPassword, setSmtpPassword] = useState('')
+  const [apiToken, setApiToken] = useState('')
   const [hookEvent, setHookEvent] = useState<NotificationEventType>('workitem.updated')
   const [hookUrl, setHookUrl] = useState('')
   const [hooksBusy, setHooksBusy] = useState(false)
@@ -48,9 +49,17 @@ export function SettingsDialog() {
     void window.azureFastBoard.getAutoLaunch().then(setAutoLaunch)
     setMattermostUrl('')
     setSmtpPassword('')
+    setApiToken('')
     setHooksMessage('')
     setTestMessage('')
   }, [open])
+
+  useEffect(() => {
+    if (!settings?.notifications.apiUrl) return
+    if (hookUrl.trim()) return
+    const base = settings.notifications.apiUrl.replace(/\/$/, '')
+    setHookUrl(`${base}/hooks/azure`)
+  }, [settings?.notifications.apiUrl, hookUrl])
 
   if (!settings) return null
 
@@ -149,8 +158,8 @@ export function SettingsDialog() {
           <div>
             <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Уведомления</h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              У Azure DevOps нет WebSocket/Web PubSub для досок. События приходят через Service Hooks
-              (HTTP) или через опрос изменений в приложении.
+              Azure DevOps шлёт Service Hooks (HTTP) на Node API (`notifications-api`), а API раздаёт
+              события по WebSocket клиентам. Без API можно использовать локальный опрос как fallback.
             </p>
           </div>
 
@@ -170,6 +179,25 @@ export function SettingsDialog() {
             />
             Только мои work item / назначения мне
           </label>
+
+          <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+            <Label>Notifications API (WebSocket)</Label>
+            <Input
+              placeholder="http://notifications.company.local:8787"
+              value={notifications.apiUrl}
+              onChange={(e) => patchNotifications({ apiUrl: e.target.value })}
+            />
+            <Input
+              type="password"
+              placeholder="AUTH_TOKEN API (если задан на сервере)"
+              value={apiToken}
+              onChange={(e) => setApiToken(e.target.value)}
+            />
+            <p className="text-xs text-slate-500">
+              Electron подписывается на <code>/ws</code>. Service Hook в ADO должен указывать на{' '}
+              <code>{'{apiUrl}/hooks/azure'}</code>.
+            </p>
+          </div>
 
           <div className="space-y-1">
             <Label>События</Label>
@@ -514,10 +542,11 @@ export function SettingsDialog() {
           onClick={async () => {
             await window.azureFastBoard.updateSettings(settings)
             await window.azureFastBoard.setAutoLaunch(autoLaunch)
-            if (mattermostUrl.trim() || smtpPassword) {
+            if (mattermostUrl.trim() || smtpPassword || apiToken.trim()) {
               await window.azureFastBoard.setNotificationSecrets({
                 mattermostWebhookUrl: mattermostUrl.trim() || undefined,
                 smtpPassword: smtpPassword || undefined,
+                notificationsApiToken: apiToken.trim() || undefined,
               })
             }
             await qc.invalidateQueries({ queryKey: queryKeys.settings })
