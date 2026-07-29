@@ -119,6 +119,7 @@ export function mapWorkItem(raw: RawWorkItem): WorkItem {
     assignedTo: identityName(fields['System.AssignedTo']),
     assignedToUniqueName: identityUnique(fields['System.AssignedTo']),
     createdBy: identityName(fields['System.CreatedBy']),
+    createdByUniqueName: identityUnique(fields['System.CreatedBy']),
     areaPath: fields['System.AreaPath'] ? String(fields['System.AreaPath']) : undefined,
     iterationPath: fields['System.IterationPath'] ? String(fields['System.IterationPath']) : undefined,
     tags: parseTags(fields['System.Tags'] as string | undefined),

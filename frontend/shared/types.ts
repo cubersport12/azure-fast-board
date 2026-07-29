@@ -73,6 +73,7 @@ export interface WorkItem {
   assignedTo?: string
   assignedToUniqueName?: string
   createdBy?: string
+  createdByUniqueName?: string
   areaPath?: string
   iterationPath?: string
   tags: string[]
@@ -157,6 +158,7 @@ export interface SavedView {
     types?: string[]
     states?: string[]
     assignees?: string[]
+    creators?: string[]
     tags?: string[]
     search?: string
   }
