@@ -364,7 +364,7 @@ export function ConnectionDialog() {
                 type="password"
                 value={pat}
                 onChange={(e) => setPat(e.target.value.replace(/\s+/g, ''))}
-                placeholder="PAT с правами Work Items Read & Write"
+                placeholder="Сырой PAT (не Base64)"
                 className="flex-1"
                 autoComplete="off"
               />
@@ -377,6 +377,10 @@ export function ConnectionDialog() {
                 {loadingStep === 'collections' ? 'Загрузка…' : 'Загрузить'}
               </Button>
             </div>
+            <p className="text-[11px] text-slate-500">
+              На opo-tfs с IIS Basic Auth PAT обычно не работает для доски/WI (в отличие от npm
+              /_packaging). Предпочтительно: «Логин / Пароль».
+            </p>
           </div>
         )}
 

@@ -1,10 +1,46 @@
 import { describe, expect, it } from 'vitest'
-import { mapWorkItem, createDemoWorkItems } from '../electron/main/azure/client'
+import {
+  azureBasicAuthHeader,
+  createDemoWorkItems,
+  mapWorkItem,
+  normalizePatSecret,
+} from '../electron/main/azure/client'
 import { parseTags, workItemColor } from '../shared/utils'
 
 describe('parseTags', () => {
   it('splits azure tag strings', () => {
     expect(parseTags('bug; vpn; ux')).toEqual(['bug', 'vpn', 'ux'])
+  })
+})
+
+describe('PAT normalization', () => {
+  it('keeps raw PAT as-is', () => {
+    expect(normalizePatSecret('abcdefghijklmnopqrstuvwxyz12')).toBe(
+      'abcdefghijklmnopqrstuvwxyz12',
+    )
+  })
+
+  it('unwraps npmrc _password base64(rawPat)', () => {
+    const raw = 'abcdefghijklmnopqrstuvwxyz12'
+    const encoded = Buffer.from(raw).toString('base64')
+    expect(normalizePatSecret(encoded)).toBe(raw)
+  })
+
+  it('unwraps base64("user:PAT") once', () => {
+    const encoded = Buffer.from('DefaultCollection:my-secret-pat-token-value').toString('base64')
+    expect(normalizePatSecret(encoded)).toBe('my-secret-pat-token-value')
+  })
+
+  it('builds Basic header like npm (non-empty user + PAT)', () => {
+    const header = azureBasicAuthHeader('my-pat-token', 'pat', 'DefaultCollection')
+    expect(header).toBe(
+      `Basic ${Buffer.from('DefaultCollection:my-pat-token').toString('base64')}`,
+    )
+  })
+
+  it('defaults PAT username to VssSessionToken', () => {
+    const header = azureBasicAuthHeader('my-pat-token', 'pat', '')
+    expect(header).toBe(`Basic ${Buffer.from('VssSessionToken:my-pat-token').toString('base64')}`)
   })
 })
 

@@ -54,6 +54,59 @@ function identityUnique(value: unknown) {
   return (value as IdentityRef).uniqueName
 }
 
+/**
+ * Azure DevOps PAT must be the raw token.
+ * Accepts: raw PAT, npmrc `_password` (base64 of raw PAT), or Basic base64("user:pat").
+ */
+export function normalizePatSecret(raw: string) {
+  let value = raw.trim()
+  if (!value) return ''
+
+  const basicPrefix = /^Basic\s+(.+)$/i.exec(value)
+  if (basicPrefix) value = basicPrefix[1].trim()
+
+  value = value.replace(/\s+/g, '')
+  if (!value) return ''
+
+  if (/^[A-Za-z0-9+/]+=*$/.test(value) && value.length >= 16 && value.length % 4 === 0) {
+    try {
+      const decoded = Buffer.from(value, 'base64').toString('utf8')
+      if (!/^[\x20-\x7E]+$/.test(decoded) || decoded.length < 16) return value
+
+      // Basic credential: "user:pat" or ":pat"
+      if (decoded.includes(':')) {
+        const colon = decoded.indexOf(':')
+        const user = decoded.slice(0, colon)
+        const pass = decoded.slice(colon + 1)
+        if (pass.length >= 16 && user.length < 128) return pass
+      }
+
+      // npmrc style: _password is base64(rawPat) with no colon
+      if (!/[\r\n]/.test(decoded)) return decoded
+    } catch {
+      // keep raw
+    }
+  }
+
+  return value
+}
+
+/**
+ * Build Authorization header for Azure DevOps.
+ * PAT on on-prem (esp. with IIS Basic Auth) matches npm/Artifacts:
+ * Basic base64("{non-empty-user}:{pat}") — empty username often 401s here.
+ */
+export function azureBasicAuthHeader(
+  secret: string,
+  authMethod: 'pat' | 'password' = 'pat',
+  username = '',
+) {
+  const token = authMethod === 'pat' ? normalizePatSecret(secret) : secret
+  const user =
+    authMethod === 'pat' ? username.trim() || 'VssSessionToken' : username
+  return `Basic ${Buffer.from(`${user}:${token}`).toString('base64')}`
+}
+
 export function mapWorkItem(raw: RawWorkItem): WorkItem {
   const fields = raw.fields ?? {}
   return {
@@ -92,7 +145,9 @@ export class AzureClient {
   constructor(options: ClientOptions) {
     this.connection = options.connection
     this.authMethod = options.connection.authMethod || (options.password ? 'password' : 'pat')
-    this.secret = (this.authMethod === 'password' ? options.password : options.pat)?.trim() || ''
+    const rawSecret = (this.authMethod === 'password' ? options.password : options.pat)?.trim() || ''
+    this.secret =
+      this.authMethod === 'pat' ? normalizePatSecret(rawSecret) : rawSecret
     this.insecureTls = Boolean(options.insecureTls)
     this.username = (options.username ?? options.connection.username ?? '').trim()
 
@@ -117,10 +172,16 @@ export class AzureClient {
   }
 
   private authHeader() {
-    // PAT: username may be empty. Password auth: DOMAIN\user:password (Basic).
-    const user = this.authMethod === 'password' ? this.username : this.username
-    const token = Buffer.from(`${user}:${this.secret}`).toString('base64')
-    return `Basic ${token}`
+    // Match Azure Artifacts / npmrc: non-empty username + raw PAT as password.
+    const patUser =
+      this.connection.collection?.trim() ||
+      this.username.trim() ||
+      'VssSessionToken'
+    return azureBasicAuthHeader(
+      this.secret,
+      this.authMethod,
+      this.authMethod === 'pat' ? patUser : this.username,
+    )
   }
 
   private async request<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -141,10 +202,15 @@ export class AzureClient {
 
     let response: Response
     try {
-      response = await azureFetch(url, {
-        ...init,
-        headers,
-      })
+      // PAT: Node fetch — Chromium net.fetch can fail Basic auth on on-prem IIS.
+      response = await azureFetch(
+        url,
+        {
+          ...init,
+          headers,
+        },
+        { preferNode: true, insecureTls: this.insecureTls },
+      )
     } catch (error) {
       if (error instanceof AzureDevOpsError) throw error
       throw new AzureDevOpsError(formatNetworkError(error), 0)
@@ -208,18 +274,37 @@ export class AzureClient {
     if (!response.ok) {
       let details = response.statusText
       try {
-        const payload = (await response.json()) as { message?: string }
+        const payload = (await response.clone().json()) as { message?: string }
         if (payload.message) details = payload.message
       } catch {
         // ignore
       }
 
       if (response.status === 401) {
+        const wwwAuth = response.headers.get('www-authenticate') || ''
+        const hasIisBasic = /basic\s+realm=/i.test(wwwAuth)
+        const hasWindows = /negotiate|ntlm/i.test(wwwAuth)
         throw new AzureDevOpsError(
           [
             'HTTP 401 Unauthorized — server rejected credentials.',
-            'For on-prem with Windows Auth use Login/Password (NTLM).',
-            'PAT tip: ensure Personal Access Tokens are enabled on the server.',
+            this.authMethod === 'pat'
+              ? [
+                  'PAT auth for Work Item REST failed (Node https, Basic Collection|VssSessionToken:PAT).',
+                  wwwAuth ? `WWW-Authenticate: ${wwwAuth}` : '',
+                  hasIisBasic && hasWindows
+                    ? [
+                        'This IIS site has Basic Authentication enabled.',
+                        'That breaks PAT for REST APIs (boards/work items).',
+                        'npm still works because Azure Artifacts uses /_packaging/* — a different auth path.',
+                        '',
+                        'Use Login/Password (NTLM) in this app.',
+                        'Or ask an admin to disable IIS Basic Authentication (keep Anonymous + Windows Auth).',
+                      ].join('\n')
+                    : 'Use Login/Password (NTLM), or check that the PAT was created on this on-prem server.',
+                ]
+                  .filter(Boolean)
+                  .join('\n')
+              : 'For on-prem with Windows Auth use Login/Password (NTLM).',
             details && details !== 'Unauthorized' ? `Details: ${details}` : '',
           ]
             .filter(Boolean)
@@ -868,7 +953,11 @@ export class AzureClient {
     headers.set('Authorization', this.authHeader())
     let response: Response
     try {
-      response = await azureFetch(resolved, { method: 'GET', headers })
+      response = await azureFetch(
+        resolved,
+        { method: 'GET', headers },
+        { preferNode: true, insecureTls: this.insecureTls },
+      )
     } catch (error) {
       if (error instanceof AzureDevOpsError) throw error
       throw new AzureDevOpsError(formatNetworkError(error), 0)

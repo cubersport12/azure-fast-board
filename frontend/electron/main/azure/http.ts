@@ -1,3 +1,5 @@
+import http from 'node:http'
+import https from 'node:https'
 import { net, session } from 'electron'
 import { AzureDevOpsError } from './errors'
 
@@ -42,26 +44,127 @@ export function applyInsecureTls(enabled: boolean) {
   }
 }
 
+function headersToRecord(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {}
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries())
+  if (Array.isArray(headers)) return Object.fromEntries(headers)
+  return { ...headers }
+}
+
+function bodyToBuffer(body: RequestInit['body']): Buffer | undefined {
+  if (body == null) return undefined
+  if (typeof body === 'string') return Buffer.from(body)
+  if (Buffer.isBuffer(body)) return body
+  if (body instanceof Uint8Array) return Buffer.from(body)
+  if (body instanceof ArrayBuffer) return Buffer.from(body)
+  return Buffer.from(String(body))
+}
+
+/**
+ * Real Node.js http/https request (not Electron/Chromium fetch).
+ * Needed for PAT Basic auth: in Electron main, global fetch === net.fetch (Chromium),
+ * which often fails Basic against IIS Windows Authentication.
+ */
+export function nodeHttpRequest(
+  url: string,
+  init: RequestInit = {},
+  options?: { insecureTls?: boolean },
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch (error) {
+      reject(new AzureDevOpsError(formatNetworkError(error), 0))
+      return
+    }
+
+    const isHttps = parsed.protocol === 'https:'
+    const transport = isHttps ? https : http
+    const method = (init.method || 'GET').toUpperCase()
+    const headers = headersToRecord(init.headers)
+    const payload = bodyToBuffer(init.body)
+
+    if (payload && !headers['Content-Length'] && !headers['content-length']) {
+      headers['Content-Length'] = String(payload.byteLength)
+    }
+
+    const req = transport.request(
+      {
+        protocol: parsed.protocol,
+        hostname: parsed.hostname,
+        port: parsed.port || (isHttps ? 443 : 80),
+        path: `${parsed.pathname}${parsed.search}`,
+        method,
+        headers,
+        agent: isHttps
+          ? new https.Agent({
+              keepAlive: true,
+              rejectUnauthorized: !options?.insecureTls,
+            })
+          : new http.Agent({ keepAlive: true }),
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
+        res.on('end', () => {
+          const body = Buffer.concat(chunks)
+          const headerInit: Record<string, string> = {}
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (value == null) continue
+            headerInit[key] = Array.isArray(value) ? value.join(', ') : value
+          }
+          resolve(
+            new Response(body, {
+              status: res.statusCode || 0,
+              statusText: res.statusMessage || '',
+              headers: headerInit,
+            }),
+          )
+        })
+      },
+    )
+
+    req.on('error', (error) => {
+      reject(new AzureDevOpsError(formatNetworkError(error), 0))
+    })
+
+    if (payload) req.write(payload)
+    req.end()
+  })
+}
+
 /**
  * Prefer Electron Chromium networking so Windows corporate CA trust works.
  * Falls back to global fetch if net.fetch is unavailable.
+ * Use `preferNode: true` for PAT — routes through nodeHttpRequest.
  */
-export async function azureFetch(url: string, init: RequestInit = {}): Promise<Response> {
+export async function azureFetch(
+  url: string,
+  init: RequestInit = {},
+  options?: { preferNode?: boolean; insecureTls?: boolean },
+): Promise<Response> {
+  if (options?.preferNode) {
+    return nodeHttpRequest(url, init, { insecureTls: options.insecureTls })
+  }
+
+  const headers = headersToRecord(init.headers)
+  const nextInit: RequestInit = { ...init, headers }
+
   try {
     if (typeof net.fetch === 'function') {
-      return await net.fetch(url, init as RequestInit)
+      return await net.fetch(url, nextInit as RequestInit)
     }
   } catch (error) {
-    // If Chromium path fails hard, try Node fetch once more for clearer errors
     try {
-      return await fetch(url, init)
+      return await fetch(url, nextInit)
     } catch {
       throw new AzureDevOpsError(formatNetworkError(error), 0)
     }
   }
 
   try {
-    return await fetch(url, init)
+    return await fetch(url, nextInit)
   } catch (error) {
     throw new AzureDevOpsError(formatNetworkError(error), 0)
   }
