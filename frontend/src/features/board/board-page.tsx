@@ -16,6 +16,7 @@ import type { BoardColumn, WorkItem } from '../../../shared/types'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Button } from '@/components/ui/button'
 import { useBoardColumns, useConnection, useCurrentUser, useMoveWorkItem, useSettings, useWorkItems } from '@/hooks/use-azure'
+import { usePersistedFilters } from '@/hooks/use-persisted-filters'
 import { applyWorkItemFilters } from '@/lib/work-item-filters'
 import { useUiStore } from '@/stores/ui-store'
 import { WorkItemCard } from '@/features/work-items/work-item-card'
@@ -24,14 +25,30 @@ function columnKey(item: WorkItem) {
   return item.boardColumn || item.state || 'New'
 }
 
-const DraggableCard = memo(function DraggableCard({ item }: { item: WorkItem }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+const DraggableCard = memo(function DraggableCard({
+  item,
+  column,
+}: {
+  item: WorkItem
+  column: string
+}) {
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
     id: String(item.id),
-    data: { item, type: 'card' },
+    data: { item, type: 'card', column },
+  })
+  const { setNodeRef: setDropRef } = useDroppable({
+    id: `card-drop:${item.id}`,
+    data: { type: 'column', column },
   })
 
   return (
-    <div ref={setNodeRef} className={isDragging ? 'opacity-30' : undefined}>
+    <div
+      ref={(node) => {
+        setDragRef(node)
+        setDropRef(node)
+      }}
+      className={isDragging ? 'opacity-30' : undefined}
+    >
       <WorkItemCard
         item={item}
         dragging={isDragging}
@@ -72,9 +89,9 @@ const Column = memo(function Column({
           <Plus className="h-4 w-4" />
         </Button>
       </div>
-      <div className="flex max-h-[calc(100vh-280px)] flex-col gap-2 overflow-y-auto p-2 contain-paint">
+      <div className="flex min-h-[120px] max-h-[calc(100vh-280px)] flex-col gap-2 overflow-y-auto p-2 contain-paint">
         {items.map((item) => (
-          <DraggableCard key={item.id} item={item} />
+          <DraggableCard key={item.id} item={item} column={column.name} />
         ))}
       </div>
     </div>
@@ -89,14 +106,13 @@ export function BoardPage() {
   const { data: settings } = useSettings()
   const move = useMoveWorkItem()
   const search = useUiStore((s) => s.search)
-  const filters = useUiStore((s) => s.filters)
-  const setFilters = useUiStore((s) => s.setFilters)
+  const { filters, setFilters } = usePersistedFilters()
   const setQuickCreateOpen = useUiStore((s) => s.setQuickCreateOpen)
   const [active, setActive] = useState<WorkItem | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 10 },
+      activationConstraint: { distance: 8 },
     }),
   )
 
@@ -153,17 +169,27 @@ export function BoardPage() {
 
     let targetColumn = ''
     const overData = over.data.current
-    if (overData?.type === 'column') {
+    if (overData?.type === 'column' && overData.column) {
       targetColumn = String(overData.column)
     } else if (String(over.id).startsWith('column:')) {
       targetColumn = String(over.id).replace(/^column:/, '')
-    } else {
-      const overItem = filtered.find((entry) => String(entry.id) === String(over.id))
-      if (overItem) targetColumn = columnKey(overItem)
+    } else if (String(over.id).startsWith('card-drop:')) {
+      targetColumn = String(overData?.column || '')
     }
 
     if (!targetColumn || columnKey(item) === targetColumn) return
-    move.mutate({ id: item.id, column: targetColumn, rev: item.rev })
+
+    const boardColumn = columns.find((entry) => entry.name === targetColumn)
+    const mappedState =
+      boardColumn?.stateMappings?.[item.type] ||
+      boardColumn?.stateMappings?.['*'] ||
+      targetColumn
+    move.mutate({
+      id: item.id,
+      column: targetColumn,
+      rev: item.rev,
+      state: mappedState,
+    })
   }
 
   const onDragCancel = () => setActive(null)

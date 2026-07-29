@@ -160,15 +160,27 @@ export function useUpdateWorkItem() {
 export function useMoveWorkItem() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, column, rev }: { id: number; column: string; rev: number }) =>
-      requireAzureApi().moveWorkItem(id, column, rev),
-    onMutate: async ({ id, column }) => {
+    mutationFn: ({
+      id,
+      column,
+      rev,
+      state,
+    }: {
+      id: number
+      column: string
+      rev: number
+      state?: string
+    }) => requireAzureApi().moveWorkItem(id, column, rev, state),
+    onMutate: async ({ id, column, state }) => {
       await qc.cancelQueries({ queryKey: queryKeys.workItems })
       const previous = qc.getQueryData<WorkItem[]>(queryKeys.workItems)
+      const nextState = state || column
       qc.setQueryData<WorkItem[]>(queryKeys.workItems, (old) => {
         if (!old) return old
         return old.map((item) =>
-          item.id === id ? { ...item, boardColumn: column, state: column } : item,
+          item.id === id
+            ? { ...item, boardColumn: column, state: nextState }
+            : item,
         )
       })
       return { previous }

@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ChevronDown, Paperclip, Save, Send } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Paperclip, Save, Send, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { PendingImageStrip } from '@/components/pending-image-strip'
+import { PendingImageStrip, RemovableImageStrip } from '@/components/pending-image-strip'
 import { AuthenticatedHtml, AuthenticatedImage } from '@/components/authenticated-media'
 import { Button } from '@/components/ui/button'
 import { Badge, Input, Textarea } from '@/components/ui/primitives'
@@ -19,7 +19,9 @@ import {
   appendImageToDescription,
   descriptionImageUrls,
   htmlToPlainText,
+  mediaUrlsMatch,
   mergePlainTextIntoDescription,
+  removeImageFromDescription,
 } from '@/lib/html-text'
 import { cn, formatRelative, workItemColor } from '@/lib/utils'
 
@@ -39,6 +41,7 @@ export function WorkItemDetailPage() {
   const [comment, setComment] = useState('')
   const [commentImages, setCommentImages] = useState<PendingImage[]>([])
   const [descriptionImages, setDescriptionImages] = useState<PendingImage[]>([])
+  const [pendingRemovedUrls, setPendingRemovedUrls] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
@@ -52,6 +55,7 @@ export function WorkItemDetailPage() {
     setDescription(htmlToPlainText(data.description ?? ''))
     setIterationPath(data.iterationPath || '')
     setDescriptionImages([])
+    setPendingRemovedUrls([])
   }, [data, dirty])
 
   const iterationOptions = useMemo(() => {
@@ -118,6 +122,10 @@ export function WorkItemDetailPage() {
     },
   })
 
+  const removeAttachment = useMutation({
+    mutationFn: (attachmentUrl: string) => requireAzureApi().removeAttachment(workItemId, attachmentUrl),
+  })
+
   useEffect(() => {
     const onPaste = async (event: ClipboardEvent) => {
       if (!data) return
@@ -146,15 +154,48 @@ export function WorkItemDetailPage() {
     return () => window.removeEventListener('paste', onPaste)
   }, [data])
 
-  const htmlDescription = useMemo(() => data?.description || '', [data])
+  const htmlDescription = useMemo(() => {
+    const original = data?.description || ''
+    return pendingRemovedUrls.reduce(
+      (html, url) => removeImageFromDescription(html, url),
+      original,
+    )
+  }, [data?.description, pendingRemovedUrls])
   const embeddedUrls = useMemo(() => descriptionImageUrls(htmlDescription), [htmlDescription])
+  const embeddedImages = useMemo(
+    () =>
+      [...embeddedUrls].map((src) => ({
+        id: src,
+        src,
+        alt:
+          data?.attachments.find((file) => mediaUrlsMatch(file.url, src))?.name ||
+          'Изображение в описании',
+      })),
+    [embeddedUrls, data?.attachments],
+  )
+  const visibleAttachments = useMemo(
+    () =>
+      (data?.attachments ?? []).filter(
+        (file) => !pendingRemovedUrls.some((url) => mediaUrlsMatch(url, file.url)),
+      ),
+    [data?.attachments, pendingRemovedUrls],
+  )
   const canSendComment = Boolean(comment.trim() || commentImages.length)
   const canSaveBody =
     dirty &&
     (title.trim() !== (data?.title ?? '') ||
       description !== htmlToPlainText(data?.description ?? '') ||
       iterationPath !== (data?.iterationPath || '') ||
-      descriptionImages.length > 0)
+      descriptionImages.length > 0 ||
+      pendingRemovedUrls.length > 0)
+
+  const markAttachmentRemoved = (url: string) => {
+    setPendingRemovedUrls((current) =>
+      current.some((entry) => mediaUrlsMatch(entry, url)) ? current : [...current, url],
+    )
+    setDirty(true)
+    setStatus('Вложение будет удалено при сохранении')
+  }
 
   const saveBody = async () => {
     if (!data || !canSaveBody) return
@@ -162,6 +203,12 @@ export function WorkItemDetailPage() {
     try {
       let rev = data.rev
       let html = data.description ?? ''
+
+      for (const url of pendingRemovedUrls) {
+        const detail = await removeAttachment.mutateAsync(url)
+        rev = detail.rev
+        html = detail.description || html
+      }
 
       for (const image of descriptionImages) {
         const detail = await upload.mutateAsync({
@@ -195,8 +242,10 @@ export function WorkItemDetailPage() {
         fields,
       })
       setDescriptionImages([])
+      setPendingRemovedUrls([])
       setDirty(false)
       setStatus('Сохранено')
+      await qc.invalidateQueries({ queryKey: queryKeys.workItem(workItemId) })
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Не удалось сохранить')
     } finally {
@@ -276,10 +325,14 @@ export function WorkItemDetailPage() {
                   className="prose prose-sm max-w-none rounded-lg border border-slate-100 bg-slate-50 p-3 text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 [&_img]:mt-2 [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:border [&_img]:border-slate-200 dark:[&_img]:border-slate-700"
                   html={htmlDescription}
                 />
-              ) : (
-                <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-sm text-slate-400 dark:border-slate-700">
-                  Описания пока нет. Вставьте скриншот или отредактируйте текст ниже.
-                </div>
+              ) : null}
+
+              {embeddedImages.length > 0 && (
+                <RemovableImageStrip
+                  images={embeddedImages}
+                  disabled={savingBody}
+                  onRemove={markAttachmentRemoved}
+                />
               )}
 
               <Textarea
@@ -409,7 +462,7 @@ export function WorkItemDetailPage() {
               <h3 className="text-sm font-semibold">
                 Вложения
                 <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
-                  ({data.attachments.length})
+                  ({visibleAttachments.length})
                 </span>
               </h3>
               <ChevronDown
@@ -441,31 +494,52 @@ export function WorkItemDetailPage() {
                   </Button>
                 </div>
                 <div className="space-y-2">
-                  {data.attachments.length === 0 && (
+                  {visibleAttachments.length === 0 && (
                     <div className="text-sm text-slate-500">Нет вложений</div>
                   )}
-                  {data.attachments.map((file) => {
-                    const embedded = [...embeddedUrls].some(
-                      (url) => url === file.url || url.includes(file.id) || file.url.includes(file.id),
-                    )
+                  {visibleAttachments.map((file) => {
+                    const embedded = [...embeddedUrls].some((url) => mediaUrlsMatch(url, file.url))
                     return (
                       <div key={file.id} className="space-y-2">
-                        <button
-                          type="button"
-                          className="block w-full truncate rounded-md border border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                          onClick={() => requireAzureApi().openExternal(file.url)}
-                        >
-                          {file.name}
-                          {embedded && (
-                            <span className="ml-2 text-[11px] text-slate-400">в описании</span>
-                          )}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 truncate rounded-md border border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                            onClick={() => requireAzureApi().openExternal(file.url)}
+                          >
+                            {file.name}
+                            {embedded && (
+                              <span className="ml-2 text-[11px] text-slate-400">в описании</span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-full bg-slate-900/70 p-1 text-white hover:bg-slate-900 disabled:opacity-50"
+                            disabled={savingBody}
+                            onClick={() => markAttachmentRemoved(file.url)}
+                            aria-label={`Удалить ${file.name}`}
+                            title="Удалить"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                         {looksLikeImage(file.name, file.url) && (
-                          <AuthenticatedImage
-                            src={file.url}
-                            alt={file.name}
-                            className="max-h-48 w-full rounded-lg border object-contain"
-                          />
+                          <div className="group relative">
+                            <AuthenticatedImage
+                              src={file.url}
+                              alt={file.name}
+                              className="max-h-48 w-full rounded-lg border object-contain"
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-2 top-2 rounded-full bg-slate-900/70 p-0.5 text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
+                              disabled={savingBody}
+                              onClick={() => markAttachmentRemoved(file.url)}
+                              aria-label={`Удалить ${file.name}`}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     )

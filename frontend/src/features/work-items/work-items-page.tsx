@@ -13,6 +13,7 @@ import type { WorkItem } from '../../../shared/types'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Badge } from '@/components/ui/primitives'
 import { useConnection, useCurrentUser, useSettings, useWorkItems } from '@/hooks/use-azure'
+import { usePersistedFilters } from '@/hooks/use-persisted-filters'
 import { applyWorkItemFilters } from '@/lib/work-item-filters'
 import { formatRelative, workItemColor, cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui-store'
@@ -23,8 +24,7 @@ export function WorkItemsPage() {
   const { data: currentUser } = useCurrentUser()
   const { data: settings } = useSettings()
   const search = useUiStore((s) => s.search)
-  const filters = useUiStore((s) => s.filters)
-  const setFilters = useUiStore((s) => s.setFilters)
+  const { filters, setFilters } = usePersistedFilters()
   const navigate = useNavigate()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'changedDate', desc: true }])
   const parentRef = useRef<HTMLDivElement>(null)

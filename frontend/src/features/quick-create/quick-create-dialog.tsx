@@ -11,6 +11,7 @@ import {
   useCreateWorkItem,
   useIterationPaths,
   useSettings,
+  useUpdateSettings,
   useWorkItems,
   useWorkItemTypes,
 } from '@/hooks/use-azure'
@@ -32,12 +33,6 @@ function assigneeValue(person: AssigneeIdentity) {
   return person.uniqueName || person.displayName
 }
 
-function normalizeIdentity(value: string) {
-  const raw = value.trim().toLowerCase()
-  const afterDomain = raw.includes('\\') ? raw.slice(raw.lastIndexOf('\\') + 1) : raw
-  return afterDomain.includes('@') ? afterDomain.slice(0, afterDomain.indexOf('@')) : afterDomain
-}
-
 export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string }) {
   const open = useUiStore((s) => s.quickCreateOpen)
   const setOpen = useUiStore((s) => s.setQuickCreateOpen)
@@ -49,6 +44,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const { data: settings } = useSettings()
   const { data: workItems = EMPTY_WORK_ITEMS } = useWorkItems()
   const create = useCreateWorkItem()
+  const updateSettings = useUpdateSettings()
   const [type, setType] = useState('Bug')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -98,17 +94,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     )
   }, [])
 
-  const defaultAssignee = useMemo(() => {
-    const username = connection?.username?.trim()
-    if (!username) return ''
-    const me = normalizeIdentity(username)
-    const match = teamAssignees.find((person) => {
-      const candidates = [person.uniqueName, person.displayName].filter(Boolean) as string[]
-      return candidates.some((candidate) => normalizeIdentity(candidate) === me)
-    })
-    return match ? assigneeValue(match) : username
-  }, [connection?.username, teamAssignees])
-
+  const defaultAssignee = useMemo(() => settings?.lastAssignee ?? '', [settings?.lastAssignee])
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
 
   const iterationOptions = useMemo(() => {
@@ -211,11 +197,12 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const submit = async (event?: React.FormEvent) => {
     event?.preventDefault()
     if (!title.trim()) return
+    const nextAssignee = assignedTo.trim()
     await create.mutateAsync({
       type,
       title: title.trim(),
       description: description.trim() || undefined,
-      assignedTo: assignedTo.trim() || undefined,
+      assignedTo: nextAssignee || undefined,
       areaPath: areaPath.trim() || undefined,
       iterationPath: iterationPath.trim() || undefined,
       tags: tags.length ? tags : undefined,
@@ -226,6 +213,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
         dataBase64,
       })),
     })
+    void updateSettings.mutateAsync({ lastAssignee: nextAssignee })
     setOpen(false)
   }
 
@@ -299,6 +287,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
               placeholder="Не назначен"
               emptyLabel="Не назначен"
               searchPlaceholder={searching ? 'Поиск…' : 'Найти человека…'}
+              allowEmpty
             />
           </div>
           <div className="space-y-1 col-span-2">

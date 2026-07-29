@@ -247,5 +247,5 @@ export function filtersEqual(a: WorkItemFilters, b: WorkItemFilters) {
 }
 
 export function hasActiveFilters(filters: WorkItemFilters) {
-  return !filtersEqual(filters, DEFAULT_FILTERS)
+  return !filtersEqual(filters, EMPTY_FILTERS)
 }

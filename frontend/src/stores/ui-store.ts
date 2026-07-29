@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { SyncStatus } from '../../shared/types'
-import { DEFAULT_FILTERS, type WorkItemFilters } from '@/lib/work-item-filters'
+import { EMPTY_FILTERS, type WorkItemFilters } from '@/lib/work-item-filters'
 
 interface UiState {
   search: string
@@ -27,7 +27,7 @@ interface UiState {
 
 export const useUiStore = create<UiState>((set) => ({
   search: '',
-  filters: DEFAULT_FILTERS,
+  filters: EMPTY_FILTERS,
   quickCreateOpen: false,
   commandPaletteOpen: false,
   shortcutsOpen: false,

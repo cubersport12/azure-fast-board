@@ -339,14 +339,22 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
     return requireClient().updateWorkItem(input)
   })
 
-  ipcMain.handle(IPC_CHANNELS.workItemsMove, async (_e, id: number, column: string, rev: number) => {
-    const client = requireClient()
-    try {
-      return await client.moveWorkItem(id, column, rev)
-    } catch {
-      return client.moveWorkItem(id, column, rev, columnStateFallback(column))
-    }
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.workItemsMove,
+    async (_e, id: number, column: string, rev: number, state?: string) => {
+      const client = requireClient()
+      const preferred = state?.trim() || column.trim()
+      try {
+        return await client.moveWorkItem(id, column, rev, preferred)
+      } catch (error) {
+        const fallback = columnStateFallback(column)
+        if (fallback && fallback !== preferred) {
+          return client.moveWorkItem(id, column, rev, fallback)
+        }
+        throw error
+      }
+    },
+  )
 
   ipcMain.handle(IPC_CHANNELS.workItemsComments, async (_e, id: number) => {
     return requireClient().getComments(id)
@@ -372,6 +380,13 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   ipcMain.handle(IPC_CHANNELS.workItemsUploadAttachment, async (_e, id: number, file: AttachmentUpload) => {
     return requireClient().uploadAttachment(id, file)
   })
+
+  ipcMain.handle(
+    IPC_CHANNELS.workItemsRemoveAttachment,
+    async (_e, id: number, attachmentUrl: string) => {
+      return requireClient().removeAttachment(id, attachmentUrl)
+    },
+  )
 
   ipcMain.handle(IPC_CHANNELS.mediaFetch, async (_e, url: string) => {
     if (typeof url !== 'string' || !url.trim()) throw new Error('Media URL is required')

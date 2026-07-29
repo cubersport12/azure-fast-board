@@ -61,6 +61,16 @@ export interface AppSettings {
   subscribedIterations: SubscribedIteration[]
   /** Empty = «Не выбрано» (show all work items). */
   selectedIterationPath: string
+  /** Last assignee used in quick create (empty = Unassigned). */
+  lastAssignee: string
+  /** Persisted board/list filters; empty arrays = no restriction. */
+  filters: {
+    types: string[]
+    states: string[]
+    assignees: string[]
+    creators: string[]
+    tags: string[]
+  }
 }
 
 export interface WorkItem {
@@ -227,6 +237,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   insecureTls: false,
   subscribedIterations: [],
   selectedIterationPath: '',
+  lastAssignee: '',
+  filters: {
+    types: [],
+    states: [],
+    assignees: [],
+    creators: [],
+    tags: [],
+  },
 }
 
 export const DEFAULT_CONNECTION: ConnectionConfig = {
