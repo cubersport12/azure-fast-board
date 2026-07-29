@@ -85,6 +85,16 @@ npm run dev
 - **Work Items** — Read & write
 - **Project and Team** — Read
 
+Вставляйте **сырой** PAT или `_password` из `.npmrc` (это Base64 от сырого токена — приложение развернёт).
+
+На on‑prem с IIS Basic Auth авторизация как у npm/Artifacts:
+
+`Authorization: Basic base64("{Collection|VssSessionToken}:{pat}")`
+
+(пустой username на таких серверах часто даёт 401).
+
+> Если PAT всё равно не проходит на Work Item API, используйте **Логин / Пароль (NTLM)**. Artifacts/npm и WIT REST иногда ведут себя по-разному на одном IIS.
+
 Учётные данные хранятся через Electron `safeStorage` (на Windows — DPAPI). В renderer-процесс секрет не передаётся.
 
 ### Корпоративный SSL / самоподписанный сертификат

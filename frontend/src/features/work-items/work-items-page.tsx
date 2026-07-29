@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import type { WorkItem } from '../../../shared/types'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Badge } from '@/components/ui/primitives'
-import { useConnection, useWorkItems } from '@/hooks/use-azure'
+import { useConnection, useCurrentUser, useSettings, useWorkItems } from '@/hooks/use-azure'
 import { applyWorkItemFilters } from '@/lib/work-item-filters'
 import { formatRelative, workItemColor, cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui-store'
@@ -20,12 +20,23 @@ import { useUiStore } from '@/stores/ui-store'
 export function WorkItemsPage() {
   const { data = [], isLoading } = useWorkItems()
   const { data: connection } = useConnection()
+  const { data: currentUser } = useCurrentUser()
+  const { data: settings } = useSettings()
   const search = useUiStore((s) => s.search)
   const filters = useUiStore((s) => s.filters)
   const setFilters = useUiStore((s) => s.setFilters)
   const navigate = useNavigate()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'changedDate', desc: true }])
   const parentRef = useRef<HTMLDivElement>(null)
+
+  const me = useMemo(
+    () => ({
+      username: connection?.username,
+      displayName: currentUser?.displayName,
+      uniqueName: currentUser?.uniqueName,
+    }),
+    [connection?.username, currentUser?.displayName, currentUser?.uniqueName],
+  )
 
   const columns = useMemo<ColumnDef<WorkItem>[]>(
     () => [
@@ -79,8 +90,15 @@ export function WorkItemsPage() {
   )
 
   const filtered = useMemo(
-    () => applyWorkItemFilters(data, search, filters, connection?.username),
-    [data, search, filters, connection?.username],
+    () =>
+      applyWorkItemFilters(
+        data,
+        search,
+        filters,
+        me,
+        settings?.selectedIterationPath,
+      ),
+    [data, search, filters, me, settings?.selectedIterationPath],
   )
 
   const table = useReactTable({

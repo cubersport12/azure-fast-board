@@ -403,6 +403,13 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       throw toIpcError(error)
     }
   })
+  ipcMain.handle(IPC_CHANNELS.iterationPaths, async () => {
+    try {
+      return await requireClient().listIterationPaths()
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
 
   ipcMain.handle(IPC_CHANNELS.viewsList, () => getViews())
   ipcMain.handle(IPC_CHANNELS.viewsSave, (_e, view: SavedView) => saveView(view))

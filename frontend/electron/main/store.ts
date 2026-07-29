@@ -6,6 +6,7 @@ import {
   type SavedView,
   type WorkItem,
 } from '../../shared/types'
+import { normalizeIterationFieldPath } from '../../shared/utils'
 
 interface StoreSchema {
   settings: AppSettings
@@ -28,11 +29,33 @@ const store = new Store<StoreSchema>({
 })
 
 export function getSettings() {
-  return store.get('settings')
+  const settings = { ...DEFAULT_SETTINGS, ...store.get('settings') }
+  const subscribedIterations = (settings.subscribedIterations ?? []).map((entry) => {
+    const path = normalizeIterationFieldPath(entry.path)
+    return {
+      path,
+      name: entry.name || path.split('\\').pop() || path,
+    }
+  })
+  return {
+    ...settings,
+    subscribedIterations,
+    selectedIterationPath: normalizeIterationFieldPath(settings.selectedIterationPath),
+  }
 }
 
 export function updateSettings(patch: Partial<AppSettings>) {
-  const next = { ...getSettings(), ...patch }
+  const current = getSettings()
+  const next: AppSettings = { ...current, ...patch }
+  if (patch.subscribedIterations) {
+    next.subscribedIterations = patch.subscribedIterations.map((entry) => {
+      const path = normalizeIterationFieldPath(entry.path)
+      return { path, name: entry.name || path.split('\\').pop() || path }
+    })
+  }
+  if (patch.selectedIterationPath !== undefined) {
+    next.selectedIterationPath = normalizeIterationFieldPath(patch.selectedIterationPath)
+  }
   store.set('settings', next)
   return next
 }

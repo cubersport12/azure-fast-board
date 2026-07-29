@@ -12,8 +12,10 @@ import type {
   AssigneeIdentity,
   AreaPathsResult,
   AreaPathOption,
+  IterationPathsResult,
+  IterationPathOption,
 } from '../../../shared/types'
-import { parseTags } from '../../../shared/utils'
+import { parseTags, normalizeIterationFieldPath } from '../../../shared/utils'
 import { AzureDevOpsError } from './errors'
 import { applyInsecureTls, azureFetch, formatNetworkError } from './http'
 
@@ -52,6 +54,59 @@ function identityUnique(value: unknown) {
   return (value as IdentityRef).uniqueName
 }
 
+/**
+ * Azure DevOps PAT must be the raw token.
+ * Accepts: raw PAT, npmrc `_password` (base64 of raw PAT), or Basic base64("user:pat").
+ */
+export function normalizePatSecret(raw: string) {
+  let value = raw.trim()
+  if (!value) return ''
+
+  const basicPrefix = /^Basic\s+(.+)$/i.exec(value)
+  if (basicPrefix) value = basicPrefix[1].trim()
+
+  value = value.replace(/\s+/g, '')
+  if (!value) return ''
+
+  if (/^[A-Za-z0-9+/]+=*$/.test(value) && value.length >= 16 && value.length % 4 === 0) {
+    try {
+      const decoded = Buffer.from(value, 'base64').toString('utf8')
+      if (!/^[\x20-\x7E]+$/.test(decoded) || decoded.length < 16) return value
+
+      // Basic credential: "user:pat" or ":pat"
+      if (decoded.includes(':')) {
+        const colon = decoded.indexOf(':')
+        const user = decoded.slice(0, colon)
+        const pass = decoded.slice(colon + 1)
+        if (pass.length >= 16 && user.length < 128) return pass
+      }
+
+      // npmrc style: _password is base64(rawPat) with no colon
+      if (!/[\r\n]/.test(decoded)) return decoded
+    } catch {
+      // keep raw
+    }
+  }
+
+  return value
+}
+
+/**
+ * Build Authorization header for Azure DevOps.
+ * PAT on on-prem (esp. with IIS Basic Auth) matches npm/Artifacts:
+ * Basic base64("{non-empty-user}:{pat}") — empty username often 401s here.
+ */
+export function azureBasicAuthHeader(
+  secret: string,
+  authMethod: 'pat' | 'password' = 'pat',
+  username = '',
+) {
+  const token = authMethod === 'pat' ? normalizePatSecret(secret) : secret
+  const user =
+    authMethod === 'pat' ? username.trim() || 'VssSessionToken' : username
+  return `Basic ${Buffer.from(`${user}:${token}`).toString('base64')}`
+}
+
 export function mapWorkItem(raw: RawWorkItem): WorkItem {
   const fields = raw.fields ?? {}
   return {
@@ -64,6 +119,7 @@ export function mapWorkItem(raw: RawWorkItem): WorkItem {
     assignedTo: identityName(fields['System.AssignedTo']),
     assignedToUniqueName: identityUnique(fields['System.AssignedTo']),
     createdBy: identityName(fields['System.CreatedBy']),
+    createdByUniqueName: identityUnique(fields['System.CreatedBy']),
     areaPath: fields['System.AreaPath'] ? String(fields['System.AreaPath']) : undefined,
     iterationPath: fields['System.IterationPath'] ? String(fields['System.IterationPath']) : undefined,
     tags: parseTags(fields['System.Tags'] as string | undefined),
@@ -90,7 +146,9 @@ export class AzureClient {
   constructor(options: ClientOptions) {
     this.connection = options.connection
     this.authMethod = options.connection.authMethod || (options.password ? 'password' : 'pat')
-    this.secret = (this.authMethod === 'password' ? options.password : options.pat)?.trim() || ''
+    const rawSecret = (this.authMethod === 'password' ? options.password : options.pat)?.trim() || ''
+    this.secret =
+      this.authMethod === 'pat' ? normalizePatSecret(rawSecret) : rawSecret
     this.insecureTls = Boolean(options.insecureTls)
     this.username = (options.username ?? options.connection.username ?? '').trim()
 
@@ -115,10 +173,16 @@ export class AzureClient {
   }
 
   private authHeader() {
-    // PAT: username may be empty. Password auth: DOMAIN\user:password (Basic).
-    const user = this.authMethod === 'password' ? this.username : this.username
-    const token = Buffer.from(`${user}:${this.secret}`).toString('base64')
-    return `Basic ${token}`
+    // Match Azure Artifacts / npmrc: non-empty username + raw PAT as password.
+    const patUser =
+      this.connection.collection?.trim() ||
+      this.username.trim() ||
+      'VssSessionToken'
+    return azureBasicAuthHeader(
+      this.secret,
+      this.authMethod,
+      this.authMethod === 'pat' ? patUser : this.username,
+    )
   }
 
   private async request<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -139,10 +203,15 @@ export class AzureClient {
 
     let response: Response
     try {
-      response = await azureFetch(url, {
-        ...init,
-        headers,
-      })
+      // PAT: Node fetch — Chromium net.fetch can fail Basic auth on on-prem IIS.
+      response = await azureFetch(
+        url,
+        {
+          ...init,
+          headers,
+        },
+        { preferNode: true, insecureTls: this.insecureTls },
+      )
     } catch (error) {
       if (error instanceof AzureDevOpsError) throw error
       throw new AzureDevOpsError(formatNetworkError(error), 0)
@@ -206,18 +275,37 @@ export class AzureClient {
     if (!response.ok) {
       let details = response.statusText
       try {
-        const payload = (await response.json()) as { message?: string }
+        const payload = (await response.clone().json()) as { message?: string }
         if (payload.message) details = payload.message
       } catch {
         // ignore
       }
 
       if (response.status === 401) {
+        const wwwAuth = response.headers.get('www-authenticate') || ''
+        const hasIisBasic = /basic\s+realm=/i.test(wwwAuth)
+        const hasWindows = /negotiate|ntlm/i.test(wwwAuth)
         throw new AzureDevOpsError(
           [
             'HTTP 401 Unauthorized — server rejected credentials.',
-            'For on-prem with Windows Auth use Login/Password (NTLM).',
-            'PAT tip: ensure Personal Access Tokens are enabled on the server.',
+            this.authMethod === 'pat'
+              ? [
+                  'PAT auth for Work Item REST failed (Node https, Basic Collection|VssSessionToken:PAT).',
+                  wwwAuth ? `WWW-Authenticate: ${wwwAuth}` : '',
+                  hasIisBasic && hasWindows
+                    ? [
+                        'This IIS site has Basic Authentication enabled.',
+                        'That breaks PAT for REST APIs (boards/work items).',
+                        'npm still works because Azure Artifacts uses /_packaging/* — a different auth path.',
+                        '',
+                        'Use Login/Password (NTLM) in this app.',
+                        'Or ask an admin to disable IIS Basic Authentication (keep Anonymous + Windows Auth).',
+                      ].join('\n')
+                    : 'Use Login/Password (NTLM), or check that the PAT was created on this on-prem server.',
+                ]
+                  .filter(Boolean)
+                  .join('\n')
+              : 'For on-prem with Windows Auth use Login/Password (NTLM).',
             details && details !== 'Unauthorized' ? `Details: ${details}` : '',
           ]
             .filter(Boolean)
@@ -674,7 +762,13 @@ export class AzureClient {
       ops.push({ op: 'add', path: '/fields/System.AreaPath', value: input.areaPath })
     }
     if (input.iterationPath) {
-      ops.push({ op: 'add', path: '/fields/System.IterationPath', value: input.iterationPath })
+      const iterationPath = normalizeIterationFieldPath(
+        input.iterationPath,
+        this.connection.project,
+      )
+      if (iterationPath) {
+        ops.push({ op: 'add', path: '/fields/System.IterationPath', value: iterationPath })
+      }
     }
     if (input.tags?.length) {
       ops.push({ op: 'add', path: '/fields/System.Tags', value: input.tags.join('; ') })
@@ -702,11 +796,17 @@ export class AzureClient {
   async updateWorkItem(input: PatchWorkItemInput): Promise<WorkItem> {
     const ops = Object.entries(input.fields)
       .filter(([, value]) => value !== undefined)
-      .map(([key, value]) => ({
-        op: 'add',
-        path: `/fields/${key}`,
-        value,
-      }))
+      .map(([key, value]) => {
+        let next = value
+        if (key === 'System.IterationPath' && typeof value === 'string') {
+          next = normalizeIterationFieldPath(value, this.connection.project) || null
+        }
+        return {
+          op: 'add',
+          path: `/fields/${key}`,
+          value: next,
+        }
+      })
 
     const raw = await this.request<RawWorkItem>(
       this.api(`/_apis/wit/workitems/${input.id}`),
@@ -854,7 +954,11 @@ export class AzureClient {
     headers.set('Authorization', this.authHeader())
     let response: Response
     try {
-      response = await azureFetch(resolved, { method: 'GET', headers })
+      response = await azureFetch(
+        resolved,
+        { method: 'GET', headers },
+        { preferNode: true, insecureTls: this.insecureTls },
+      )
     } catch (error) {
       if (error instanceof AzureDevOpsError) throw error
       throw new AzureDevOpsError(formatNetworkError(error), 0)
@@ -1190,6 +1294,99 @@ export class AzureClient {
       })
 
     return { rootPath, defaultPath, areas }
+  }
+
+  async listIterationPaths(): Promise<IterationPathsResult> {
+    type ClassificationNode = {
+      name?: string
+      path?: string
+      children?: ClassificationNode[]
+    }
+
+    const toPath = (nodePath?: string, name?: string, projectName?: string) => {
+      const raw = nodePath?.trim()
+        ? nodePath.replace(/^\\+/, '').replace(/\//g, '\\')
+        : projectName && name
+          ? name === projectName
+            ? projectName
+            : `${projectName}\\${name}`
+          : name?.trim() || ''
+      return normalizeIterationFieldPath(raw, projectName)
+    }
+
+    const shortName = (path: string, root?: string) => {
+      if (root && path.toLowerCase() === root.toLowerCase()) return path
+      if (root && path.toLowerCase().startsWith(`${root.toLowerCase()}\\`)) {
+        return path.slice(root.length + 1)
+      }
+      const parts = path.split('\\')
+      return parts[parts.length - 1] || path
+    }
+
+    const project = this.connection.project
+    let iterations: IterationPathOption[] = []
+    let rootPath: string | undefined
+
+    try {
+      const root = await this.request<ClassificationNode>(
+        this.api('/_apis/wit/classificationnodes/Iterations?$depth=14'),
+      )
+      rootPath = toPath(root.path, root.name, project) || project
+
+      const walk = (node: ClassificationNode) => {
+        const path = toPath(node.path, node.name, project)
+        if (path && (!rootPath || path.toLowerCase() !== rootPath.toLowerCase())) {
+          iterations.push({ path, name: shortName(path, rootPath) })
+        }
+        for (const child of node.children ?? []) walk(child)
+      }
+      walk(root)
+    } catch {
+      iterations = []
+    }
+
+    // Prefer team iterations when available (current/upcoming sprints).
+    try {
+      const team = this.connection.team || project
+      const teamIterations = await this.request<{
+        value?: Array<{ path?: string; name?: string }>
+      }>(this.api(`/${encodeURIComponent(team)}/_apis/work/teamsettings/iterations`))
+      const fromTeam = (teamIterations.value ?? [])
+        .map((entry) => {
+          const path = normalizeIterationFieldPath(entry.path, project)
+          if (!path) return null
+          return { path, name: entry.name?.trim() || shortName(path, rootPath) }
+        })
+        .filter((entry): entry is IterationPathOption => Boolean(entry))
+
+      if (fromTeam.length) {
+        const byPath = new Map(iterations.map((item) => [item.path.toLowerCase(), item]))
+        for (const item of fromTeam) {
+          if (!byPath.has(item.path.toLowerCase())) iterations.push(item)
+        }
+        const teamKeys = new Set(fromTeam.map((item) => item.path.toLowerCase()))
+        iterations.sort((a, b) => {
+          const aTeam = teamKeys.has(a.path.toLowerCase()) ? 0 : 1
+          const bTeam = teamKeys.has(b.path.toLowerCase()) ? 0 : 1
+          if (aTeam !== bTeam) return aTeam - bTeam
+          return a.name.localeCompare(b.name, 'ru')
+        })
+      } else {
+        iterations.sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      }
+    } catch {
+      iterations.sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    }
+
+    const seen = new Set<string>()
+    iterations = iterations.filter((item) => {
+      const key = item.path.toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+    return { rootPath, iterations }
   }
 
   async getWorkItemTypes(): Promise<WorkItemTypeInfo[]> {

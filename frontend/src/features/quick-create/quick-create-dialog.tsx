@@ -9,6 +9,8 @@ import {
   useAssignees,
   useConnection,
   useCreateWorkItem,
+  useIterationPaths,
+  useSettings,
   useWorkItems,
   useWorkItemTypes,
 } from '@/hooks/use-azure'
@@ -19,8 +21,12 @@ import {
 } from '@/lib/clipboard-image'
 import { requireAzureApi } from '@/lib/azure-api'
 import { uniqueOptions } from '@/lib/work-item-filters'
-import type { AssigneeIdentity } from '../../../shared/types'
+import type { AssigneeIdentity, WorkItem, WorkItemTypeInfo } from '../../../shared/types'
 import { useUiStore } from '@/stores/ui-store'
+
+const EMPTY_TYPES: WorkItemTypeInfo[] = []
+const EMPTY_ASSIGNEES: AssigneeIdentity[] = []
+const EMPTY_WORK_ITEMS: WorkItem[] = []
 
 function assigneeValue(person: AssigneeIdentity) {
   return person.uniqueName || person.displayName
@@ -35,17 +41,20 @@ function normalizeIdentity(value: string) {
 export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string }) {
   const open = useUiStore((s) => s.quickCreateOpen)
   const setOpen = useUiStore((s) => s.setQuickCreateOpen)
-  const { data: types = [] } = useWorkItemTypes()
+  const { data: types = EMPTY_TYPES } = useWorkItemTypes()
   const { data: connection } = useConnection()
-  const { data: teamAssignees = [] } = useAssignees()
+  const { data: teamAssignees = EMPTY_ASSIGNEES } = useAssignees()
   const { data: areaPaths } = useAreaPaths()
-  const { data: workItems = [] } = useWorkItems()
+  const { data: iterationPaths } = useIterationPaths()
+  const { data: settings } = useSettings()
+  const { data: workItems = EMPTY_WORK_ITEMS } = useWorkItems()
   const create = useCreateWorkItem()
   const [type, setType] = useState('Bug')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assignedTo, setAssignedTo] = useState('')
   const [areaPath, setAreaPath] = useState('')
+  const [iterationPath, setIterationPath] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [extraTags, setExtraTags] = useState<string[]>([])
   const [images, setImages] = useState<PendingImage[]>([])
@@ -100,12 +109,35 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     return match ? assigneeValue(match) : username
   }, [connection?.username, teamAssignees])
 
+  const selectedIteration = settings?.selectedIterationPath?.trim() || ''
+
+  const iterationOptions = useMemo(() => {
+    const fromApi = iterationPaths?.iterations ?? []
+    const fromSubscribed = settings?.subscribedIterations ?? []
+    const byPath = new Map<string, { value: string; label: string }>()
+    for (const entry of fromSubscribed) {
+      byPath.set(entry.path.toLowerCase(), { value: entry.path, label: entry.name })
+    }
+    for (const entry of fromApi) {
+      const key = entry.path.toLowerCase()
+      if (!byPath.has(key)) byPath.set(key, { value: entry.path, label: entry.name })
+    }
+    if (selectedIteration && !byPath.has(selectedIteration.toLowerCase())) {
+      byPath.set(selectedIteration.toLowerCase(), {
+        value: selectedIteration,
+        label: selectedIteration.split('\\').pop() || selectedIteration,
+      })
+    }
+    return [...byPath.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  }, [iterationPaths?.iterations, settings?.subscribedIterations, selectedIteration])
+
   useEffect(() => {
     if (open) {
       setTitle('')
       setDescription('')
       setAssignedTo(defaultAssignee)
       setAreaPath(defaultAreaPath || rootPath)
+      setIterationPath(selectedIteration)
       setTags([])
       setExtraTags([])
       setImages([])
@@ -115,7 +147,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
         document.getElementById('quick-create-title')?.focus()
       })
     }
-  }, [open, types, defaultAssignee, defaultAreaPath, rootPath, teamAssignees])
+  }, [open, types, defaultAssignee, defaultAreaPath, rootPath, teamAssignees, selectedIteration])
 
   useEffect(() => {
     if (!open) return
@@ -185,6 +217,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       description: description.trim() || undefined,
       assignedTo: assignedTo.trim() || undefined,
       areaPath: areaPath.trim() || undefined,
+      iterationPath: iterationPath.trim() || undefined,
       tags: tags.length ? tags : undefined,
       boardColumn: defaultColumn,
       attachments: images.map(({ fileName, mimeType, dataBase64 }) => ({
@@ -237,6 +270,20 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
               placeholder="Не указано"
               emptyLabel="Не указано"
               searchPlaceholder="Поиск Area…"
+              suggestionsLabel="Suggestions"
+              allowEmpty
+            />
+          </div>
+          <div className="space-y-1 col-span-2">
+            <Label htmlFor="quick-create-iteration">Итерация</Label>
+            <SearchableSelect
+              id="quick-create-iteration"
+              value={iterationPath}
+              options={iterationOptions}
+              onChange={setIterationPath}
+              placeholder="Не выбрано"
+              emptyLabel="Не выбрано"
+              searchPlaceholder="Поиск итерации…"
               suggestionsLabel="Suggestions"
               allowEmpty
             />

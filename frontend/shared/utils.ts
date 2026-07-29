@@ -7,6 +7,32 @@ export function parseTags(value?: string | string[]) {
     .filter(Boolean)
 }
 
+/**
+ * Classification nodes use `Project\Iteration\Sprint`, but System.IterationPath
+ * expects `Project\Sprint` (structural "Iteration" node stripped).
+ */
+export function normalizeIterationFieldPath(path?: string | null, project?: string) {
+  if (!path?.trim()) return ''
+  let next = path.trim().replace(/^\\+/, '').replace(/\//g, '\\').replace(/\\+/g, '\\')
+
+  const stripIteration = (value: string, root: string) => {
+    const prefix = `${root}\\Iteration\\`
+    if (value.toLowerCase().startsWith(prefix.toLowerCase())) {
+      return `${root}\\${value.slice(prefix.length)}`
+    }
+    if (value.toLowerCase() === `${root}\\iteration`.toLowerCase()) return root
+    return value
+  }
+
+  if (project?.trim()) {
+    next = stripIteration(next, project.trim())
+  } else {
+    next = next.replace(/^([^\\]+)\\Iteration\\/i, '$1\\')
+  }
+
+  return next.replace(/\\+/g, '\\')
+}
+
 export function formatRelative(date?: string) {
   if (!date) return ''
   const value = new Date(date).getTime()
