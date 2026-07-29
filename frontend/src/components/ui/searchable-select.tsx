@@ -14,10 +14,12 @@ export function SearchableSelect({
   options,
   onChange,
   onSearch,
+  onCreate,
   placeholder = 'Выберите…',
   emptyLabel = 'Не назначен',
   searchPlaceholder = 'Поиск…',
   suggestionsLabel,
+  createLabel = 'Создать новый',
   allowEmpty = true,
   disabled,
 }: {
@@ -26,11 +28,14 @@ export function SearchableSelect({
   options: SearchableOption[]
   onChange: (next: string) => void
   onSearch?: (query: string) => void
+  /** When set, shows a footer action that creates from the current search query. */
+  onCreate?: (query: string) => void
   placeholder?: string
   emptyLabel?: string
   searchPlaceholder?: string
   /** Optional header above the options list (Azure-style "Suggestions"). */
   suggestionsLabel?: string
+  createLabel?: string
   allowEmpty?: boolean
   disabled?: boolean
 }) {
@@ -93,6 +98,18 @@ export function SearchableSelect({
     setOpen(false)
   }
 
+  const createQuery = query.trim()
+  const canCreate =
+    Boolean(onCreate) &&
+    createQuery.length > 0 &&
+    !options.some((option) => option.value.toLowerCase() === createQuery.toLowerCase())
+
+  const create = () => {
+    if (!canCreate || !onCreate) return
+    onCreate(createQuery)
+    setOpen(false)
+  }
+
   const rows = allowEmpty ? [{ value: '', label: emptyLabel }, ...filtered] : filtered
 
   return (
@@ -132,6 +149,10 @@ export function SearchableSelect({
                   setActiveIndex((index) => Math.max(index - 1, 0))
                 } else if (event.key === 'Enter') {
                   event.preventDefault()
+                  if (canCreate && filtered.length === 0) {
+                    create()
+                    return
+                  }
                   const row = rows[activeIndex]
                   if (row) choose(row.value)
                 }
@@ -198,6 +219,23 @@ export function SearchableSelect({
               )
             })}
           </div>
+          {onCreate && (
+            <div className="border-t border-slate-100 p-1.5 dark:border-slate-800">
+              <button
+                type="button"
+                disabled={!canCreate}
+                className={cn(
+                  'flex w-full items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium',
+                  canCreate
+                    ? 'bg-sky-600 text-white hover:bg-sky-700'
+                    : 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500',
+                )}
+                onClick={create}
+              >
+                {createLabel}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

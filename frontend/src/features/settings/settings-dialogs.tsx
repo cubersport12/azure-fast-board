@@ -127,7 +127,9 @@ export function ShortcutsDialog() {
         {rows.map(([keys, label]) => (
           <div key={keys} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800">
             <span>{label}</span>
-            <kbd className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs">{keys}</kbd>
+            <kbd className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-800 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-100">
+              {keys}
+            </kbd>
           </div>
         ))}
       </div>
