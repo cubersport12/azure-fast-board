@@ -15,6 +15,7 @@ const EVENT_LABELS: Array<{ id: NotificationEventType; label: string }> = [
   { id: 'workitem.updated', label: 'Обновление work item' },
   { id: 'workitem.assigned', label: 'Назначение на меня / смена исполнителя' },
   { id: 'workitem.commented', label: 'Комментарии (через Service Hooks)' },
+  { id: 'workitem.deleted', label: 'Удаление work item' },
 ]
 
 export function SettingsDialog() {

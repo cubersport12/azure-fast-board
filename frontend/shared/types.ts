@@ -57,6 +57,7 @@ export type NotificationEventType =
   | 'workitem.updated'
   | 'workitem.commented'
   | 'workitem.assigned'
+  | 'workitem.deleted'
 
 export interface AppNotificationProviderSettings {
   enabled: boolean
@@ -163,6 +164,8 @@ export interface BoardNotification {
   createdAt: string
   /** Where the event came from. */
   source?: 'poll' | 'websocket' | 'test' | 'azure-service-hook'
+  /** Renderer-owned; main process may omit (treated as unread). */
+  read?: boolean
 }
 
 export interface WorkItem {
@@ -327,6 +330,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
     'workitem.updated': true,
     'workitem.commented': false,
     'workitem.assigned': true,
+    'workitem.deleted': true,
   },
   providers: {
     app: {

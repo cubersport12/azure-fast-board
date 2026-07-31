@@ -76,6 +76,8 @@ const api: AzureFastBoardApi = {
   onNavigate: (cb) => subscribe(IPC_CHANNELS.eventNavigate, cb),
   onSyncStatus: (cb) => subscribe(IPC_CHANNELS.eventSyncStatus, cb),
   onNotification: (cb) => subscribe<BoardNotification>(IPC_CHANNELS.eventNotification, cb),
+  onWorkItemsInvalidate: (cb) =>
+    subscribe<{ reason: string }>(IPC_CHANNELS.eventWorkItemsInvalidate, cb),
 }
 
 contextBridge.exposeInMainWorld('azureFastBoard', api)

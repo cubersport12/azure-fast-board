@@ -24,6 +24,7 @@ import {
   removeImageFromDescription,
 } from '@/lib/html-text'
 import { cn, formatRelative, workItemColor } from '@/lib/utils'
+import { useNotificationsStore } from '@/stores/notifications-store'
 
 export function WorkItemDetailPage() {
   const { id = '' } = useParams()
@@ -35,6 +36,7 @@ export function WorkItemDetailPage() {
   const { data: iterationPaths } = useIterationPaths()
   const update = useUpdateWorkItem()
   const qc = useQueryClient()
+  const markReadByWorkItemId = useNotificationsStore((s) => s.markReadByWorkItemId)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [iterationPath, setIterationPath] = useState('')
@@ -48,6 +50,11 @@ export function WorkItemDetailPage() {
   const [savingBody, setSavingBody] = useState(false)
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
+
+  useEffect(() => {
+    if (!Number.isFinite(workItemId) || workItemId <= 0) return
+    markReadByWorkItemId(workItemId)
+  }, [workItemId, markReadByWorkItemId])
 
   useEffect(() => {
     if (!data || dirty) return

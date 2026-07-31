@@ -62,11 +62,14 @@ export class NotificationService {
       },
       onStatus: (status) => {
         this.wsConnected = status.connected
+        console.log(`[notifications] realtime ${status.message || (status.connected ? 'up' : 'down')}`)
       },
     })
 
     if (apiUrl.trim()) {
       this.ws.start()
+    } else {
+      console.log('[notifications] apiUrl empty — WebSocket disabled, poll fallback only')
     }
   }
 
@@ -103,6 +106,13 @@ export class NotificationService {
     const win = this.getMainWindow()
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC_CHANNELS.eventNotification, notification)
+    }
+  }
+
+  private emitWorkItemsInvalidate(reason: string) {
+    const win = this.getMainWindow()
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.eventWorkItemsInvalidate, { reason })
     }
   }
 
@@ -147,6 +157,11 @@ export class NotificationService {
     const settings = getSettings()
     if (!settings.notifications.enabled) return
 
+    const eventTypeRaw = event.eventType.toLowerCase()
+    if (eventTypeRaw === 'workitem.created' || eventTypeRaw === 'workitem.deleted') {
+      this.emitWorkItemsInvalidate(eventTypeRaw)
+    }
+
     const eventType = event.eventType as NotificationEventType
     const enabledMap = settings.notifications.events
     if (eventType in enabledMap && enabledMap[eventType] === false) return
@@ -176,6 +191,7 @@ export class NotificationService {
       workItemTitle: event.workItemTitle,
       createdAt: event.createdAt || new Date().toISOString(),
       source: 'azure-service-hook',
+      read: false,
     })
   }
 

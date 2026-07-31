@@ -57,19 +57,48 @@ export function createRequestHandler(options: { config: ApiConfig; hub: EventHub
     }
 
     if (method === 'POST' && url.pathname === config.hooksPath) {
-      if (!assertAuth(req, url, config, res)) return
+      console.log(
+        `[notifications-api] hook received ${method} ${url.pathname}` +
+          ` from ${req.socket.remoteAddress || '?'}` +
+          ` content-length=${req.headers['content-length'] || '?'}`,
+      )
+      if (!assertAuth(req, url, config, res)) {
+        console.warn('[notifications-api] hook rejected: unauthorized')
+        return
+      }
       try {
         const raw = await readBody(req)
         const text = raw.toString('utf8').trim()
         const json = text ? (JSON.parse(text) as unknown) : null
         const event = mapServiceHookPayload(json)
         if (!event) {
+          const eventType =
+            json && typeof json === 'object' && 'eventType' in json
+              ? String((json as { eventType?: unknown }).eventType ?? '')
+              : ''
+          console.warn(
+            `[notifications-api] hook unrecognized` +
+              ` bytes=${raw.length}` +
+              (eventType ? ` eventType=${eventType}` : '') +
+              ` body=${text.slice(0, 500)}`,
+          )
           sendJson(res, 400, { ok: false, message: 'Unrecognized service hook payload' })
           return
         }
         hub.publish(event)
+        console.log(
+          `[notifications-api] hook ok` +
+            ` eventType=${event.eventType}` +
+            ` workItemId=${event.workItemId ?? '-'}` +
+            ` id=${event.id}` +
+            ` clients=${hub.getStats().clients}`,
+        )
         sendJson(res, 202, { ok: true, id: event.id, clients: hub.getStats().clients })
       } catch (error) {
+        console.error(
+          '[notifications-api] hook error',
+          error instanceof Error ? error.message : error,
+        )
         sendJson(res, 400, {
           ok: false,
           message: error instanceof Error ? error.message : 'Invalid JSON body',

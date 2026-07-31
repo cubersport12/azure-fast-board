@@ -100,6 +100,11 @@ export class EventHub {
         eventTypes: eventTypes.length ? new Set(eventTypes) : null,
       }
       this.clients.set(id, client)
+      console.log(
+        `[notifications-api] ws client connected id=${id}` +
+          ` projectIds=${projectIds.join(',') || '*'}` +
+          ` eventTypes=${eventTypes.join(',') || '*'}`,
+      )
 
       const helloHistory = this.history.filter((event) => matchesFilters(client, event)).slice(0, 20)
       send(socket, { type: 'hello', clientId: id, history: helloHistory })
@@ -116,6 +121,11 @@ export class EventHub {
             .filter(Boolean)
           client.projectIds = nextProjects.length ? new Set(nextProjects) : null
           client.eventTypes = nextEvents.length ? new Set(nextEvents) : null
+          console.log(
+            `[notifications-api] ws client subscribed id=${id}` +
+              ` projectIds=${nextProjects.join(',') || '*'}` +
+              ` eventTypes=${nextEvents.join(',') || '*'}`,
+          )
         } catch {
           send(socket, { type: 'error', message: 'Invalid subscribe message' })
         }
@@ -123,16 +133,24 @@ export class EventHub {
 
       socket.on('close', () => {
         this.clients.delete(id)
+        console.log(`[notifications-api] ws client disconnected id=${id}`)
       })
     })
   }
 
   publish(event: BoardRealtimeEvent) {
     this.history = [event, ...this.history].slice(0, this.historyLimit)
+    let delivered = 0
     for (const client of this.clients.values()) {
       if (!matchesFilters(client, event)) continue
       send(client.socket, { type: 'event', event })
+      delivered += 1
     }
+    console.log(
+      `[notifications-api] fan-out eventType=${event.eventType}` +
+        ` workItemId=${event.workItemId ?? '-'}` +
+        ` clients=${delivered}/${this.clients.size}`,
+    )
   }
 
   getStats() {

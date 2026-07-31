@@ -76,6 +76,7 @@ export const IPC_CHANNELS = {
   eventNavigate: 'event:navigate',
   eventSyncStatus: 'event:syncStatus',
   eventNotification: 'event:notification',
+  eventWorkItemsInvalidate: 'event:workItemsInvalidate',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -142,4 +143,5 @@ export interface AzureFastBoardApi {
   onNavigate: (cb: (route: string) => void) => () => void
   onSyncStatus: (cb: (status: SyncStatus) => void) => () => void
   onNotification: (cb: (notification: BoardNotification) => void) => () => void
+  onWorkItemsInvalidate: (cb: (payload: { reason: string }) => void) => () => void
 }
