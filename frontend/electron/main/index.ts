@@ -13,6 +13,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { IPC_CHANNELS } from '../../shared/ipc'
 import { registerIpcHandlers } from './ipc'
+import { bindTrayAttention, clearTaskbarAttention } from './notifications/attention'
 import { getSettings } from './store'
 
 const require = createRequire(import.meta.url)
@@ -46,7 +47,7 @@ let tray: Tray | null = null
 const preload = path.join(__dirname, '../preload/index.cjs')
 const indexHtml = path.join(RENDERER_DIST, 'index.html')
 
-function createTrayIcon() {
+function createTrayIcon(alert = false) {
   const size = 16
   const canvas = Buffer.alloc(size * size * 4)
   for (let y = 0; y < size; y += 1) {
@@ -54,10 +55,17 @@ function createTrayIcon() {
       const idx = (y * size + x) * 4
       const edge = x === 0 || y === 0 || x === size - 1 || y === size - 1
       const board = x > 3 && x < 12 && y > 3 && y < 12
-      if (edge || board) {
-        canvas[idx] = 14
-        canvas[idx + 1] = 165
-        canvas[idx + 2] = 233
+      // Small badge in the corner for "has notifications".
+      const badge = alert && x >= 10 && y <= 5 && x + y >= 12
+      if (badge) {
+        canvas[idx] = 244
+        canvas[idx + 1] = 63
+        canvas[idx + 2] = 94
+        canvas[idx + 3] = 255
+      } else if (edge || board) {
+        canvas[idx] = alert ? 244 : 14
+        canvas[idx + 1] = alert ? 63 : 165
+        canvas[idx + 2] = alert ? 94 : 233
         canvas[idx + 3] = 255
       } else {
         canvas[idx + 3] = 0
@@ -68,6 +76,7 @@ function createTrayIcon() {
 }
 
 function showWindow() {
+  clearTaskbarAttention(win)
   if (!win) {
     void createWindow()
     return
@@ -252,7 +261,7 @@ async function createWindow() {
   attachLayoutIndependentShortcuts(win)
 
   win.on('focus', () => {
-    win?.flashFrame(false)
+    clearTaskbarAttention(win)
   })
 }
 
@@ -260,10 +269,17 @@ app.whenReady().then(async () => {
   registerIpcHandlers(() => win)
   await createWindow()
 
-  tray = new Tray(createTrayIcon())
+  const idleIcon = createTrayIcon(false)
+  const alertIcon = createTrayIcon(true)
+  tray = new Tray(idleIcon)
   tray.setToolTip('Azure Fast Board')
   tray.setContextMenu(buildTrayMenu())
   tray.on('double-click', () => showWindow())
+  tray.on('click', () => {
+    // Single click also clears blink when user acknowledges the tray.
+    if (win?.isVisible()) clearTaskbarAttention(win)
+  })
+  bindTrayAttention(tray, { idle: idleIcon, alert: alertIcon })
 
   registerShortcuts()
 })

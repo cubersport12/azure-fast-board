@@ -1,8 +1,10 @@
 import { Notification } from 'electron'
+import { IPC_CHANNELS } from '../../../shared/ipc'
 import type { BoardNotification, NotificationSettings } from '../../../shared/types'
 import { loadMattermostWebhookUrl, loadSmtpPassword } from '../credentials'
 import { applyInsecureTls, azureFetch } from '../azure/http'
-import { requestTaskbarAttention } from './attention'
+import { clearTaskbarAttention, requestTaskbarAttention } from './attention'
+import { formatWindowsNotification, notificationOpenRoute } from './format'
 import { sendSmtpMail } from './smtp'
 
 export interface ProviderContext {
@@ -35,6 +37,21 @@ export async function deliverToProviders(
   }
 }
 
+function openFromNotification(notification: BoardNotification, ctx: ProviderContext) {
+  const route = notificationOpenRoute(notification)
+  // Deleted (and other non-openable) — do nothing on click.
+  if (!route) return
+
+  const win = ctx.getMainWindow()
+  if (!win || win.isDestroyed()) return
+
+  clearTaskbarAttention(win)
+  if (win.isMinimized()) win.restore()
+  if (!win.isVisible()) win.show()
+  win.focus()
+  win.webContents.send(IPC_CHANNELS.eventNavigate, route)
+}
+
 async function deliverApp(
   notification: BoardNotification,
   settings: NotificationSettings,
@@ -45,18 +62,18 @@ async function deliverApp(
     requestTaskbarAttention(win)
   }
 
+  // History replay should not spam Action Center.
+  if (notification.read) return
+
   if (settings.providers.app.showToast && Notification.isSupported()) {
+    const { title, body } = formatWindowsNotification(notification)
     const toast = new Notification({
-      title: notification.title,
-      body: notification.body,
+      title,
+      body,
       silent: false,
+      timeoutType: 'default',
     })
-    toast.on('click', () => {
-      if (!win || win.isDestroyed()) return
-      if (win.isMinimized()) win.restore()
-      win.show()
-      win.focus()
-    })
+    toast.on('click', () => openFromNotification(notification, ctx))
     toast.show()
   }
 }
@@ -68,7 +85,8 @@ async function deliverMattermost(notification: BoardNotification, ctx: ProviderC
   }
   if (ctx.insecureTls) applyInsecureTls(true)
 
-  const text = `**${notification.title}**\n${notification.body}`
+  const { title, body } = formatWindowsNotification(notification)
+  const text = `**${title}**\n${body}`
   const response = await azureFetch(
     webhookUrl,
     {
@@ -98,6 +116,7 @@ async function deliverEmail(
     throw new Error('Email provider is not fully configured')
   }
   const password = loadSmtpPassword() || undefined
+  const { title, body } = formatWindowsNotification(notification)
   await sendSmtpMail({
     host: email.smtpHost,
     port: email.smtpPort || 587,
@@ -106,8 +125,8 @@ async function deliverEmail(
     password,
     from: email.smtpUser || 'azure-fast-board@localhost',
     to: email.to,
-    subject: notification.title,
-    text: notification.body,
+    subject: title,
+    text: body,
   })
   void ctx
 }

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ChevronDown, Paperclip, Save, Send, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PendingImageStrip, RemovableImageStrip } from '@/components/pending-image-strip'
 import { AuthenticatedHtml, AuthenticatedImage } from '@/components/authenticated-media'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,8 @@ export function WorkItemDetailPage() {
   const { id = '' } = useParams()
   const workItemId = Number(id)
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const highlightCommentId = Number(searchParams.get('commentId') || '')
   const { data, isLoading, refetch } = useWorkItem(workItemId)
   const { data: types = [] } = useWorkItemTypes()
   const { data: settings } = useSettings()
@@ -48,6 +50,7 @@ export function WorkItemDetailPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [savingBody, setSavingBody] = useState(false)
+  const [activeHighlightCommentId, setActiveHighlightCommentId] = useState<number | null>(null)
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
 
@@ -64,6 +67,61 @@ export function WorkItemDetailPage() {
     setDescriptionImages([])
     setPendingRemovedUrls([])
   }, [data, dirty])
+
+  useEffect(() => {
+    if (!data || !Number.isFinite(highlightCommentId) || highlightCommentId <= 0) return
+
+    const targetId = highlightCommentId
+    let attempts = 0
+    let done = false
+    let pollTimer: number | null = null
+    let clearTimer: number | null = null
+
+    const finish = (found: boolean) => {
+      if (done) return
+      done = true
+      if (pollTimer != null) {
+        window.clearInterval(pollTimer)
+        pollTimer = null
+      }
+      if (!found) {
+        document.getElementById('wi-discussion')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      clearTimer = window.setTimeout(() => {
+        setActiveHighlightCommentId((current) => (current === targetId ? null : current))
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete('commentId')
+            return next
+          },
+          { replace: true },
+        )
+      }, 4500)
+    }
+
+    const tryHighlight = () => {
+      if (done) return
+      attempts += 1
+      const el = document.getElementById(`wi-comment-${targetId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setActiveHighlightCommentId(targetId)
+        finish(true)
+        return
+      }
+      if (attempts >= 12) finish(false)
+    }
+
+    tryHighlight()
+    if (!done) pollTimer = window.setInterval(tryHighlight, 200)
+
+    return () => {
+      done = true
+      if (pollTimer != null) window.clearInterval(pollTimer)
+      if (clearTimer != null) window.clearTimeout(clearTimer)
+    }
+  }, [data, highlightCommentId, setSearchParams])
 
   const iterationOptions = useMemo(() => {
     const fromApi = iterationPaths?.iterations ?? []
@@ -367,7 +425,10 @@ export function WorkItemDetailPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+          <div
+            id="wi-discussion"
+            className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+          >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Обсуждение</h3>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">Ctrl+V — вставить скриншот</span>
@@ -379,7 +440,13 @@ export function WorkItemDetailPage() {
               {data.comments.map((entry) => (
                 <div
                   key={entry.id}
-                  className="rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950"
+                  id={`wi-comment-${entry.id}`}
+                  className={cn(
+                    'rounded-lg border p-3 transition-colors duration-500',
+                    activeHighlightCommentId === entry.id
+                      ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-300 dark:border-amber-500 dark:bg-amber-950/50 dark:ring-amber-700'
+                      : 'border-slate-100 bg-slate-50 dark:border-slate-700 dark:bg-slate-950',
+                  )}
                 >
                   <div className="mb-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                     <span className="font-medium text-slate-700 dark:text-slate-200">{entry.createdBy}</span>

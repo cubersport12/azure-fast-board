@@ -184,7 +184,7 @@ export function SettingsDialog() {
           <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
             <Label>Notifications API (WebSocket)</Label>
             <Input
-              placeholder="http://notifications.company.local:8787"
+              placeholder="http://172.22.91.47:8787"
               value={notifications.apiUrl}
               onChange={(e) => patchNotifications({ apiUrl: e.target.value })}
             />

@@ -16,6 +16,9 @@ interface AzureHookPayload {
   detailedMessage?: { text?: string; markdown?: string }
   resource?: {
     id?: number
+    /** Present on workitem.commented hooks (comment id is resource.id). */
+    workItemId?: number
+    workItem?: { id?: number; fields?: Record<string, unknown> }
     rev?: number
     fields?: Record<string, unknown>
     revision?: { fields?: Record<string, unknown> }
@@ -29,13 +32,20 @@ interface AzureHookPayload {
 
 function identityName(value: unknown) {
   if (!value) return undefined
-  if (typeof value === 'string') return value
+  if (typeof value === 'string') {
+    const before = value.split('<')[0]?.trim()
+    return before || value.trim()
+  }
   const identity = value as IdentityRef
   return identity.displayName || identity.uniqueName
 }
 
 function identityUnique(value: unknown) {
-  if (!value || typeof value === 'string') return undefined
+  if (!value) return undefined
+  if (typeof value === 'string') {
+    const angle = value.match(/<([^>]+)>/)
+    return angle?.[1]?.trim() || undefined
+  }
   return (value as IdentityRef).uniqueName
 }
 
@@ -48,19 +58,30 @@ export function mapServiceHookPayload(raw: unknown): BoardRealtimeEvent | null {
   const fields =
     payload.resource?.fields ||
     payload.resource?.revision?.fields ||
+    payload.resource?.workItem?.fields ||
     {}
 
+  // Comment hooks: resource.id is the comment id; work item lives in workItemId / workItem.id.
   const workItemId =
-    typeof payload.resource?.id === 'number'
-      ? payload.resource.id
-      : typeof fields['System.Id'] === 'number'
-        ? (fields['System.Id'] as number)
-        : undefined
+    typeof payload.resource?.workItemId === 'number'
+      ? payload.resource.workItemId
+      : typeof payload.resource?.workItem?.id === 'number'
+        ? payload.resource.workItem.id
+        : typeof fields['System.Id'] === 'number'
+          ? (fields['System.Id'] as number)
+          : typeof payload.resource?.id === 'number' &&
+              !/^workitem\.commented$/i.test(payload.eventType || '')
+            ? payload.resource.id
+            : undefined
 
   const title =
     fields['System.Title'] != null
       ? String(fields['System.Title'])
       : payload.message?.text?.trim() || undefined
+
+  const isCommented = /^workitem\.commented$/i.test(payload.eventType || '')
+  const commentId =
+    isCommented && typeof payload.resource?.id === 'number' ? payload.resource.id : undefined
 
   return {
     id: String(payload.id || randomUUID()),
@@ -79,6 +100,7 @@ export function mapServiceHookPayload(raw: unknown): BoardRealtimeEvent | null {
       ? String(fields['System.WorkItemType'])
       : undefined,
     workItemState: fields['System.State'] ? String(fields['System.State']) : undefined,
+    commentId,
     assignedTo: identityName(fields['System.AssignedTo']),
     assignedToUniqueName: identityUnique(fields['System.AssignedTo']),
     message:

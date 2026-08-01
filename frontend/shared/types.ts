@@ -161,6 +161,9 @@ export interface BoardNotification {
   body: string
   workItemId?: number
   workItemTitle?: string
+  workItemType?: string
+  /** Present for workitem.commented (ADO comment id). */
+  commentId?: number
   createdAt: string
   /** Where the event came from. */
   source?: 'poll' | 'websocket' | 'test' | 'azure-service-hook'
@@ -324,11 +327,12 @@ export interface IterationPathsResult {
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
   onlyAssignedToMe: true,
-  apiUrl: '',
+  /** Direct URL for Electron main (not via Vite). Override in Settings if needed. */
+  apiUrl: 'http://172.22.91.47:8787',
   events: {
     'workitem.created': true,
     'workitem.updated': true,
-    'workitem.commented': false,
+    'workitem.commented': true,
     'workitem.assigned': true,
     'workitem.deleted': true,
   },

@@ -1,8 +1,49 @@
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, NativeImage, Tray } from 'electron'
+
+let trayRef: Tray | null = null
+let idleIcon: NativeImage | null = null
+let alertIcon: NativeImage | null = null
+let blinkTimer: NodeJS.Timeout | null = null
+let blinkOn = false
+
+export function bindTrayAttention(
+  tray: Tray,
+  icons: { idle: NativeImage; alert: NativeImage },
+) {
+  trayRef = tray
+  idleIcon = icons.idle
+  alertIcon = icons.alert
+}
+
+function startTrayBlink() {
+  if (!trayRef || !idleIcon || !alertIcon) return
+  if (blinkTimer) return
+
+  blinkOn = false
+  trayRef.setToolTip('Azure Fast Board — есть уведомления')
+  blinkTimer = setInterval(() => {
+    blinkOn = !blinkOn
+    trayRef?.setImage(blinkOn ? alertIcon! : idleIcon!)
+  }, 450)
+  trayRef.setImage(alertIcon)
+  blinkOn = true
+}
+
+function stopTrayBlink() {
+  if (blinkTimer) {
+    clearInterval(blinkTimer)
+    blinkTimer = null
+  }
+  blinkOn = false
+  if (trayRef && idleIcon) {
+    trayRef.setImage(idleIcon)
+    trayRef.setToolTip('Azure Fast Board')
+  }
+}
 
 /**
- * Classic Windows attention: if the app is only in the tray (no taskbar button),
- * show a minimized taskbar icon and flash it — do not restore/focus the window.
+ * - Hidden in tray → blink tray icon only (never show the window).
+ * - Minimized / present on taskbar but unfocused → flash taskbar button.
  */
 export function requestTaskbarAttention(win: BrowserWindow | null | undefined) {
   if (!win || win.isDestroyed()) return
@@ -10,20 +51,19 @@ export function requestTaskbarAttention(win: BrowserWindow | null | undefined) {
   const focused = win.isVisible() && !win.isMinimized() && win.isFocused()
   if (focused) return
 
-  win.setSkipTaskbar(false)
-
+  // Свернуто в трей (окна нет на панели задач) — только мигание tray.
   if (!win.isVisible()) {
-    // Bring back a taskbar button without activating the window.
-    win.showInactive()
-    win.minimize()
-  } else if (!win.isMinimized() && !win.isFocused()) {
-    // Visible but unfocused — flash only.
+    startTrayBlink()
+    return
   }
 
+  // На панели задач (в т.ч. свёрнуто) — классическое мигание кнопки.
   win.flashFrame(true)
 }
 
 export function clearTaskbarAttention(win: BrowserWindow | null | undefined) {
-  if (!win || win.isDestroyed()) return
-  win.flashFrame(false)
+  if (win && !win.isDestroyed()) {
+    win.flashFrame(false)
+  }
+  stopTrayBlink()
 }

@@ -12,6 +12,8 @@ export interface BoardRealtimeEvent {
   workItemTitle?: string
   workItemType?: string
   workItemState?: string
+  /** ADO comment id for workitem.commented. */
+  commentId?: number
   assignedTo?: string
   assignedToUniqueName?: string
   message?: string

@@ -40,6 +40,34 @@ describe('mapServiceHookPayload', () => {
     })
   })
 
+  it('maps workitem.commented using workItemId, not comment id', () => {
+    const event = mapServiceHookPayload({
+      id: 'evt-comment',
+      eventType: 'workitem.commented',
+      message: { text: 'Comment on bug' },
+      resource: {
+        id: 7,
+        workItemId: 25201,
+        workItem: {
+          id: 25201,
+          fields: {
+            'System.Title': 'Тестовый баг',
+            'System.AssignedTo': { displayName: 'Alex', uniqueName: 'DOMAIN\\alex' },
+          },
+        },
+      },
+    })
+
+    expect(event).toMatchObject({
+      eventType: 'workitem.commented',
+      workItemId: 25201,
+      commentId: 7,
+      workItemTitle: 'Тестовый баг',
+      assignedTo: 'Alex',
+      assignedToUniqueName: 'DOMAIN\\alex',
+    })
+  })
+
   it('returns null without eventType', () => {
     expect(mapServiceHookPayload({ resource: { id: 1 } })).toBeNull()
   })

@@ -66,9 +66,13 @@ export function NotificationsDrawer() {
   const openItem = (item: UiNotification) => {
     markRead(item.id)
     setDrawerOpen(false)
-    if (item.workItemId && !String(item.eventType).includes('deleted')) {
-      navigate(`/work-items/${item.workItemId}`)
+    const type = String(item.eventType).toLowerCase()
+    if (!item.workItemId || type.includes('deleted')) return
+    if (type.includes('commented') && item.commentId) {
+      navigate(`/work-items/${item.workItemId}?commentId=${item.commentId}`)
+      return
     }
+    navigate(`/work-items/${item.workItemId}`)
   }
 
   return (

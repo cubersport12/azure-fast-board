@@ -82,6 +82,8 @@ export const useNotificationsStore = create<NotificationsState>()(
           body: item.body,
           workItemId: item.workItemId,
           workItemTitle: item.workItemTitle,
+          workItemType: item.workItemType,
+          commentId: item.commentId,
           createdAt: item.createdAt,
           source: item.source,
           read: item.read,

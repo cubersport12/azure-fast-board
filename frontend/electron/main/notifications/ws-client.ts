@@ -10,12 +10,14 @@ export interface RealtimeBoardEvent {
   workItemTitle?: string
   workItemType?: string
   workItemState?: string
+  commentId?: number
   assignedTo?: string
   assignedToUniqueName?: string
   message?: string
 }
 
 type EventHandler = (event: RealtimeBoardEvent) => void
+type HistoryHandler = (events: RealtimeBoardEvent[]) => void
 type StatusHandler = (status: { connected: boolean; message?: string }) => void
 
 export function toWsUrl(apiBase: string, token: string, projectId?: string) {
@@ -51,17 +53,20 @@ export class NotificationsWsClient {
   private apiUrl = ''
   private projectId?: string
   private onEvent: EventHandler | null = null
+  private onHistory: HistoryHandler | null = null
   private onStatus: StatusHandler | null = null
 
   configure(options: {
     apiUrl: string
     projectId?: string
     onEvent: EventHandler
+    onHistory?: HistoryHandler
     onStatus?: StatusHandler
   }) {
     this.apiUrl = options.apiUrl.trim()
     this.projectId = options.projectId
     this.onEvent = options.onEvent
+    this.onHistory = options.onHistory ?? null
     this.onStatus = options.onStatus ?? null
   }
 
@@ -149,10 +154,12 @@ export class NotificationsWsClient {
           message?: string
         }
         if (data.type === 'hello') {
+          const history = Array.isArray(data.history) ? data.history : []
           console.log(
             `[notifications] ws hello clientId=${data.clientId || '?'}` +
-              ` history=${data.history?.length ?? 0}`,
+              ` history=${history.length}`,
           )
+          if (history.length) this.onHistory?.(history)
           return
         }
         if (data.type === 'error') {

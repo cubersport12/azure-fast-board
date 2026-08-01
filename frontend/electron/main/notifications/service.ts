@@ -5,13 +5,24 @@ import type { AzureClient } from '../azure/client'
 import { getConnection, getSettings } from '../store'
 import { clearTaskbarAttention } from './attention'
 import { diffWorkItems } from './diff'
+import { formatWindowsNotification } from './format'
+import { anyIdentityMatch } from './identity'
 import { deliverToProviders } from './providers'
 import { NotificationsWsClient, type RealtimeBoardEvent } from './ws-client'
 
 const HISTORY_LIMIT = 50
 
-function sameIdentity(a?: string, b?: string) {
-  return (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase()
+/** True when event assignee matches current user. Missing assignee → unknown (null). */
+function isEventAssignedToMe(
+  event: RealtimeBoardEvent,
+  uniqueName?: string,
+  displayName?: string,
+): boolean | null {
+  const mine = [uniqueName, displayName]
+  const theirs = [event.assignedToUniqueName, event.assignedTo]
+  if (!mine.some((value) => value?.trim())) return null
+  if (!theirs.some((value) => value?.trim())) return null
+  return anyIdentityMatch(mine, theirs)
 }
 
 export class NotificationService {
@@ -59,6 +70,13 @@ export class NotificationService {
       projectId: this.currentProjectId,
       onEvent: (event) => {
         void this.handleRealtimeEvent(event)
+      },
+      onHistory: (events) => {
+        void (async () => {
+          for (const event of events) {
+            await this.handleRealtimeEvent(event, { fromHistory: true })
+          }
+        })()
       },
       onStatus: (status) => {
         this.wsConnected = status.connected
@@ -147,7 +165,7 @@ export class NotificationService {
     }
   }
 
-  private async handleRealtimeEvent(event: RealtimeBoardEvent) {
+  private async handleRealtimeEvent(event: RealtimeBoardEvent, options?: { fromHistory?: boolean }) {
     if (this.seenEventIds.has(event.id)) return
     this.seenEventIds.add(event.id)
     if (this.seenEventIds.size > 500) {
@@ -158,41 +176,63 @@ export class NotificationService {
     if (!settings.notifications.enabled) return
 
     const eventTypeRaw = event.eventType.toLowerCase()
-    if (eventTypeRaw === 'workitem.created' || eventTypeRaw === 'workitem.deleted') {
+    if (
+      !options?.fromHistory &&
+      (eventTypeRaw === 'workitem.created' || eventTypeRaw === 'workitem.deleted')
+    ) {
       this.emitWorkItemsInvalidate(eventTypeRaw)
     }
 
     const eventType = event.eventType as NotificationEventType
     const enabledMap = settings.notifications.events
-    if (eventType in enabledMap && enabledMap[eventType] === false) return
-    // Map unknown ADO types: workitem.deleted etc. still allowed if not explicitly disabled.
+    if (eventType in enabledMap && enabledMap[eventType] === false) {
+      console.log(
+        `[notifications] skip ${eventTypeRaw} #${event.workItemId ?? '-'} — event disabled in settings`,
+      )
+      return
+    }
 
     if (settings.notifications.onlyAssignedToMe) {
-      const knownUser = Boolean(this.currentUserUniqueName || this.currentUserDisplayName)
-      if (knownUser) {
-        const mine =
-          sameIdentity(event.assignedToUniqueName, this.currentUserUniqueName) ||
-          sameIdentity(event.assignedTo, this.currentUserDisplayName)
-        if (!mine) return
+      const mine = isEventAssignedToMe(
+        event,
+        this.currentUserUniqueName,
+        this.currentUserDisplayName,
+      )
+      // Comment hooks often omit System.AssignedTo — treat missing assignee as unknown and show.
+      if (mine === false) {
+        console.log(
+          `[notifications] skip ${eventTypeRaw} #${event.workItemId ?? '-'} — not assigned to me` +
+            ` (event=${event.assignedToUniqueName || event.assignedTo || '∅'}` +
+            ` me=${this.currentUserUniqueName || this.currentUserDisplayName || '∅'})`,
+        )
+        return
       }
     }
 
-    const title =
-      event.message ||
-      `${event.eventType}${event.workItemId ? ` #${event.workItemId}` : ''}`
-    const body = event.workItemTitle || event.message || 'Событие доски'
-
-    await this.dispatch({
+    const draft: BoardNotification = {
       id: event.id || randomUUID(),
       eventType: event.eventType,
-      title,
-      body,
+      title: '',
+      body: event.message || event.workItemTitle || 'Событие доски',
       workItemId: event.workItemId,
       workItemTitle: event.workItemTitle,
+      workItemType: event.workItemType,
+      commentId: event.commentId,
       createdAt: event.createdAt || new Date().toISOString(),
       source: 'azure-service-hook',
-      read: false,
-    })
+      read: Boolean(options?.fromHistory),
+    }
+    const formatted = formatWindowsNotification(draft)
+    draft.title = formatted.title
+    draft.body = formatted.body
+
+    console.log(
+      `[notifications] dispatch ${eventTypeRaw} #${event.workItemId ?? '-'}` +
+        (event.commentId ? ` commentId=${event.commentId}` : '') +
+        (options?.fromHistory ? ' (history)' : ''),
+    )
+
+    await this.dispatch(draft)
   }
 
   private async poll() {
