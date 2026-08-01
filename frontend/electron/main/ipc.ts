@@ -135,6 +135,11 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   notificationService = new NotificationService(getClient, getMainWindow)
   notificationService.start()
 
+  ipcMain.handle(IPC_CHANNELS.debugLog, (_e, message: string, data?: unknown) => {
+    if (data !== undefined) console.log(String(message || ''), data)
+    else console.log(String(message || ''))
+  })
+
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => getSettings())
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_e, patch) => {
     const next = updateSettings(patch)
@@ -387,20 +392,11 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsAddComment, async (_e, input: AddCommentInput) => {
-    const { id, text, attachments = [] } = input
-    const client = requireClient()
-    const uploadedUrls: string[] = []
-
-    for (const file of attachments) {
-      const detail = await client.uploadAttachment(id, file)
-      const latest = detail.attachments[detail.attachments.length - 1]
-      if (latest?.url) uploadedUrls.push(latest.url)
-    }
-
-    const imageBlocks = uploadedUrls.map((url, index) => `![screenshot-${index + 1}](${url})`)
-    const body = [text.trim(), ...imageBlocks].filter(Boolean).join('\n\n')
+    const { id, text } = input
+    const body = String(text || '').trim()
     if (!body) throw new Error('Comment is empty')
-    return client.addComment(id, body)
+    // Images are uploaded in the renderer and already inlined as <img> in HTML.
+    return requireClient().addComment(id, body)
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsUploadAttachment, async (_e, id: number, file: AttachmentUpload) => {

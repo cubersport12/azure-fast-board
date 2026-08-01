@@ -192,8 +192,14 @@ export interface WorkItem {
   changedDate?: string
   createdDate?: string
   description?: string
+  /** Bug / TCM: Microsoft.VSTS.TCM.ReproSteps (Steps to Reproduce). */
+  reproSteps?: string
   url?: string
 }
+
+/** Azure DevOps HTML body fields used by the detail editor. */
+export const ADO_FIELD_DESCRIPTION = 'System.Description'
+export const ADO_FIELD_REPRO_STEPS = 'Microsoft.VSTS.TCM.ReproSteps'
 
 export interface WorkItemComment {
   id: number
@@ -231,8 +237,8 @@ export interface CreateWorkItemInput {
 
 export interface AddCommentInput {
   id: number
+  /** HTML (or legacy plain text) comment body. Inline images use <img src="…">. */
   text: string
-  attachments?: AttachmentUpload[]
 }
 
 export interface PatchWorkItemInput {

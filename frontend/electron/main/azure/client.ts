@@ -1,21 +1,23 @@
-import type {
-  AttachmentUpload,
-  BoardColumn,
-  ConnectionConfig,
-  ConnectionTestResult,
-  CreateWorkItemInput,
-  PatchWorkItemInput,
-  ServiceHookCreateInput,
-  ServiceHookSubscription,
-  WorkItem,
-  WorkItemComment,
-  WorkItemDetail,
-  WorkItemTypeInfo,
-  AssigneeIdentity,
-  AreaPathsResult,
-  AreaPathOption,
-  IterationPathsResult,
-  IterationPathOption,
+import {
+  ADO_FIELD_DESCRIPTION,
+  ADO_FIELD_REPRO_STEPS,
+  type AttachmentUpload,
+  type BoardColumn,
+  type ConnectionConfig,
+  type ConnectionTestResult,
+  type CreateWorkItemInput,
+  type PatchWorkItemInput,
+  type ServiceHookCreateInput,
+  type ServiceHookSubscription,
+  type WorkItem,
+  type WorkItemComment,
+  type WorkItemDetail,
+  type WorkItemTypeInfo,
+  type AssigneeIdentity,
+  type AreaPathsResult,
+  type AreaPathOption,
+  type IterationPathsResult,
+  type IterationPathOption,
 } from '../../../shared/types'
 import { parseTags, normalizeIterationFieldPath } from '../../../shared/utils'
 import { AzureDevOpsError } from './errors'
@@ -133,8 +135,39 @@ export function mapWorkItem(raw: RawWorkItem): WorkItem {
       : undefined,
     changedDate: fields['System.ChangedDate'] ? String(fields['System.ChangedDate']) : undefined,
     createdDate: fields['System.CreatedDate'] ? String(fields['System.CreatedDate']) : undefined,
-    description: fields['System.Description'] ? String(fields['System.Description']) : undefined,
+    description: fields[ADO_FIELD_DESCRIPTION]
+      ? String(fields[ADO_FIELD_DESCRIPTION])
+      : undefined,
+    reproSteps: fields[ADO_FIELD_REPRO_STEPS]
+      ? String(fields[ADO_FIELD_REPRO_STEPS])
+      : undefined,
     url: raw.url,
+  }
+}
+
+function summarizeHtmlField(value: unknown) {
+  if (value == null) return null
+  const html = String(value)
+  const text = html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const imageSrcs: string[] = []
+  const imgRe = /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi
+  let match: RegExpExecArray | null
+  while ((match = imgRe.exec(html))) {
+    const src = (match[1] || '').replace(/&amp;/gi, '&').trim()
+    if (src) imageSrcs.push(src.slice(0, 200))
+  }
+  // Also count <img> without a parseable src (broken markup).
+  const imgTags = (html.match(/<img\b/gi) || []).length
+  return {
+    chars: html.length,
+    textPreview: text.slice(0, 120),
+    images: imgTags,
+    imageSrcs,
+    htmlSnippet: html.slice(0, 280),
   }
 }
 
@@ -727,9 +760,20 @@ export class AzureClient {
   }
 
   async getWorkItem(id: number): Promise<WorkItemDetail> {
-    const raw = await this.request<RawWorkItem>(
-      this.api(`/_apis/wit/workitems/${id}?$expand=all`),
-    )
+    const url = this.api(`/_apis/wit/workitems/${id}?$expand=all`)
+    console.log(`[azure] GET work item #${id}`, url)
+    const raw = await this.request<RawWorkItem>(url)
+    const fields = raw.fields ?? {}
+    const relations = raw.relations ?? []
+    console.log(`[azure] work item #${id} fields`, {
+      type: fields['System.WorkItemType'],
+      title: fields['System.Title'],
+      description: summarizeHtmlField(fields[ADO_FIELD_DESCRIPTION]),
+      reproSteps: summarizeHtmlField(fields[ADO_FIELD_REPRO_STEPS]),
+      attachedFiles: relations.filter((r) => r.rel === 'AttachedFile').length,
+      relationRels: [...new Set(relations.map((r) => r.rel))],
+    })
+
     const base = mapWorkItem(raw)
     const comments = await this.getComments(id)
     const attachments = (raw.relations ?? [])
@@ -746,7 +790,7 @@ export class AzureClient {
       attachments,
       history: [],
       relations: raw.relations ?? [],
-      fields: raw.fields ?? {},
+      fields,
     }
   }
 
@@ -947,9 +991,11 @@ export class AzureClient {
       }
 
       if (result.status < 200 || result.status >= 300) {
+        console.warn(`[azure] downloadMedia NTLM HTTP ${result.status}`, resolved)
         throw new AzureDevOpsError(`Failed to download media (HTTP ${result.status})`, result.status)
       }
 
+      console.log(`[azure] downloadMedia ok (NTLM) ${result.body.length}b`, resolved)
       return {
         mimeType: this.guessMimeType(resolved, result.contentType),
         dataBase64: result.body.toString('base64'),
@@ -970,6 +1016,7 @@ export class AzureClient {
     }
 
     if (!response.ok) {
+      console.warn(`[azure] downloadMedia PAT HTTP ${response.status}`, resolved)
       throw new AzureDevOpsError(`Failed to download media (HTTP ${response.status})`, response.status)
     }
 

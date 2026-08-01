@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { resolveMediaUrl, rewriteHtmlImageSrcs } from '@/lib/authenticated-media'
+import {
+  blankRemoteImageSrcs,
+  resolveMediaUrl,
+  rewriteHtmlImageSrcs,
+} from '@/lib/authenticated-media'
 import { decodeHtmlEntities } from '@/lib/html-text'
 
 /** Soft-decode text nodes so &amp;quot; / &quot; / &nbsp; render as readable characters. */
@@ -81,12 +85,15 @@ export function AuthenticatedHtml({
   html: string
   className?: string
 }) {
-  const [resolved, setResolved] = useState(() => normalizeHtmlEntities(html))
+  // Never paint remote ADO img src in the renderer (no NTLM → 401).
+  const [resolved, setResolved] = useState(() =>
+    blankRemoteImageSrcs(normalizeHtmlEntities(html)),
+  )
 
   useEffect(() => {
     let cancelled = false
     const normalized = normalizeHtmlEntities(html)
-    setResolved(normalized)
+    setResolved(blankRemoteImageSrcs(normalized))
     void rewriteHtmlImageSrcs(normalized).then((next) => {
       if (!cancelled) setResolved(next)
     })

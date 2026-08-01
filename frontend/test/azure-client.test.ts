@@ -81,6 +81,8 @@ describe('mapWorkItem', () => {
         'System.AssignedTo': { displayName: 'Alex', uniqueName: 'alex@corp.local' },
         'System.CreatedBy': { displayName: 'Sam Author', uniqueName: 'sam@corp.local' },
         'System.Tags': 'ci; build',
+        'System.Description': '<p>Desc</p>',
+        'Microsoft.VSTS.TCM.ReproSteps': '<div>Тут описание</div><img src="https://x/a.png" />',
       },
     })
 
@@ -94,6 +96,8 @@ describe('mapWorkItem', () => {
       assignedTo: 'Alex',
       createdBy: 'Sam Author',
       tags: ['ci', 'build'],
+      description: '<p>Desc</p>',
+      reproSteps: '<div>Тут описание</div><img src="https://x/a.png" />',
     })
   })
 })

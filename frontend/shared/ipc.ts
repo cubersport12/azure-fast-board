@@ -81,6 +81,8 @@ export const IPC_CHANNELS = {
   eventSyncStatus: 'event:syncStatus',
   eventNotification: 'event:notification',
   eventWorkItemsInvalidate: 'event:workItemsInvalidate',
+  /** Renderer → main terminal logs (DevTools console is easy to miss). */
+  debugLog: 'debug:log',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -152,4 +154,6 @@ export interface AzureFastBoardApi {
   onSyncStatus: (cb: (status: SyncStatus) => void) => () => void
   onNotification: (cb: (notification: BoardNotification) => void) => () => void
   onWorkItemsInvalidate: (cb: (payload: { reason: string }) => void) => () => void
+  /** Print to the Electron main terminal (npm run dev). */
+  debugLog: (message: string, data?: unknown) => Promise<void>
 }

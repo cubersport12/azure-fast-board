@@ -1,31 +1,37 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ChevronDown, Paperclip, Save, Send, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, Save, Send } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { PendingImageStrip, RemovableImageStrip } from '@/components/pending-image-strip'
-import { AuthenticatedHtml, AuthenticatedImage } from '@/components/authenticated-media'
+import { AuthenticatedHtml } from '@/components/authenticated-media'
+import { RichTextEditor, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Button } from '@/components/ui/button'
-import { Badge, Input, Textarea } from '@/components/ui/primitives'
-import { queryKeys, useIterationPaths, useSettings, useUpdateWorkItem, useWorkItem, useWorkItemTypes } from '@/hooks/use-azure'
-import { requireAzureApi } from '@/lib/azure-api'
+import { Badge, Input } from '@/components/ui/primitives'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import {
-  extractImageFromClipboardEvent,
-  renderCommentHtml,
-  toPendingImage,
-  type PendingImage,
-} from '@/lib/clipboard-image'
-import {
-  appendImageToDescription,
-  descriptionImageUrls,
-  htmlToPlainText,
-  mediaUrlsMatch,
-  mergePlainTextIntoDescription,
-  removeImageFromDescription,
-} from '@/lib/html-text'
+  queryKeys,
+  useIterationPaths,
+  useSettings,
+  useUpdateWorkItem,
+  useWorkItem,
+  useWorkItemTypes,
+} from '@/hooks/use-azure'
+import { getAzureApi, requireAzureApi } from '@/lib/azure-api'
+import { renderCommentHtml } from '@/lib/clipboard-image'
+import { debugLog } from '@/lib/debug-log'
+import { descriptionImageUrls, mediaUrlsMatch } from '@/lib/html-text'
 import { notificationBelongsToWorkItem } from '@/lib/notification-route'
 import { cn, formatRelative, workItemColor } from '@/lib/utils'
 import { useNotificationsStore } from '@/stores/notifications-store'
+import {
+  ADO_FIELD_DESCRIPTION,
+  ADO_FIELD_REPRO_STEPS,
+  type AttachmentUpload,
+  type BoardNotification,
+} from '../../../shared/types'
+
+function bodyFieldForType(type: string) {
+  return /bug/i.test(type) ? ADO_FIELD_REPRO_STEPS : ADO_FIELD_DESCRIPTION
+}
 
 export function WorkItemDetailPage() {
   const { id = '' } = useParams()
@@ -41,55 +47,75 @@ export function WorkItemDetailPage() {
   const qc = useQueryClient()
   const markReadByWorkItemId = useNotificationsStore((s) => s.markReadByWorkItemId)
   const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  /** null = show server body; string = user/editor draft */
+  const [bodyHtml, setBodyHtml] = useState<string | null>(null)
   const [iterationPath, setIterationPath] = useState('')
   const [comment, setComment] = useState('')
-  const [commentImages, setCommentImages] = useState<PendingImage[]>([])
-  const [descriptionImages, setDescriptionImages] = useState<PendingImage[]>([])
-  const [pendingRemovedUrls, setPendingRemovedUrls] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
-  const [attachmentsOpen, setAttachmentsOpen] = useState(false)
   const [savingBody, setSavingBody] = useState(false)
   const [activeHighlightCommentId, setActiveHighlightCommentId] = useState<number | null>(null)
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
+  const bodyField = data ? bodyFieldForType(data.type) : ADO_FIELD_DESCRIPTION
+  const isReproBody = bodyField === ADO_FIELD_REPRO_STEPS
+  const serverBodyHtml = isReproBody ? (data?.reproSteps ?? '') : (data?.description ?? '')
+  // Never feed the editor an empty string while server still has ReproSteps HTML.
+  const displayBodyHtml =
+    dirty && bodyHtml != null && htmlPlainText(bodyHtml).length > 0
+      ? bodyHtml
+      : serverBodyHtml
 
   // Opening a card means the user has seen related notifications — mark them read.
   useEffect(() => {
     if (!Number.isFinite(workItemId) || workItemId <= 0) return
     markReadByWorkItemId(workItemId)
-    const api = window.azureFastBoard
+    const api = getAzureApi()
     if (!api?.markNotificationsReadByWorkItem) return
     void api
       .markNotificationsReadByWorkItem(workItemId)
-      .then((history) => useNotificationsStore.getState().seed(history))
+      .then((history: BoardNotification[]) => useNotificationsStore.getState().seed(history))
       .catch(() => undefined)
   }, [workItemId, markReadByWorkItemId])
 
   // New notification while this card is open → also mark read.
   useEffect(() => {
     if (!Number.isFinite(workItemId) || workItemId <= 0) return
-    const api = window.azureFastBoard
+    const api = getAzureApi()
     if (!api?.onNotification || !api.markNotificationsReadByWorkItem) return
-    return api.onNotification((notification) => {
+    return api.onNotification((notification: BoardNotification) => {
       if (!notificationBelongsToWorkItem(notification, workItemId)) return
       markReadByWorkItemId(workItemId)
       void api
         .markNotificationsReadByWorkItem(workItemId)
-        .then((history) => useNotificationsStore.getState().seed(history))
+        .then((history: BoardNotification[]) => useNotificationsStore.getState().seed(history))
         .catch(() => undefined)
     })
   }, [workItemId, markReadByWorkItemId])
 
+  // Reset draft when navigating to another work item.
+  useEffect(() => {
+    setDirty(false)
+    setBodyHtml(null)
+    setTitle('')
+    setIterationPath('')
+    setComment('')
+    setStatus(null)
+  }, [workItemId])
+
   useEffect(() => {
     if (!data || dirty) return
+    debugLog('[detail] seed fields from server', {
+      id: data.id,
+      type: data.type,
+      bodyField: bodyFieldForType(data.type),
+      chars: serverBodyHtml.length,
+      html: serverBodyHtml,
+    })
     setTitle(data.title)
-    setDescription(htmlToPlainText(data.description ?? ''))
+    setBodyHtml(null)
     setIterationPath(data.iterationPath || '')
-    setDescriptionImages([])
-    setPendingRemovedUrls([])
-  }, [data, dirty])
+  }, [data, dirty, serverBodyHtml])
 
   useEffect(() => {
     if (!data || !Number.isFinite(highlightCommentId) || highlightCommentId <= 0) return
@@ -185,138 +211,81 @@ export function WorkItemDetailPage() {
   }, [data, types])
 
   const addComment = useMutation({
-    mutationFn: (input: { text: string; attachments: PendingImage[] }) =>
+    mutationFn: (text: string) =>
       requireAzureApi().addComment({
         id: workItemId,
-        text: input.text,
-        attachments: input.attachments.map(({ fileName, mimeType, dataBase64 }) => ({
-          fileName,
-          mimeType,
-          dataBase64,
-        })),
+        text,
       }),
     onSuccess: async () => {
       setComment('')
-      setCommentImages([])
       await qc.invalidateQueries({ queryKey: queryKeys.workItem(workItemId) })
     },
   })
 
-  const upload = useMutation({
-    mutationFn: (file: { fileName: string; mimeType: string; dataBase64: string }) =>
-      requireAzureApi().uploadAttachment(workItemId, file),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: queryKeys.workItem(workItemId) })
-    },
-  })
+  const uploadInlineImage = useCallback(async (file: AttachmentUpload) => {
+    const detail = await requireAzureApi().uploadAttachment(workItemId, file)
+    const latest = detail.attachments[detail.attachments.length - 1]
+    if (!latest?.url) throw new Error('Не удалось получить URL изображения')
+    return latest.url
+  }, [workItemId])
 
-  const removeAttachment = useMutation({
-    mutationFn: (attachmentUrl: string) => requireAzureApi().removeAttachment(workItemId, attachmentUrl),
-  })
-
-  useEffect(() => {
-    const onPaste = async (event: ClipboardEvent) => {
-      if (!data) return
-      const target = event.target as HTMLElement | null
-      const inCommentComposer = Boolean(target?.closest('[data-comment-composer]'))
-      const inDescriptionComposer = Boolean(target?.closest('[data-description-composer]'))
-      const image = await extractImageFromClipboardEvent(event)
-      if (!image) return
-
-      event.preventDefault()
-
-      if (inCommentComposer) {
-        setCommentImages((current) => [...current, toPendingImage(image)])
-        setStatus('Скриншот добавлен в комментарий')
-        return
-      }
-
-      if (inDescriptionComposer) {
-        setDescriptionImages((current) => [...current, toPendingImage(image)])
+  const onBodyUpload = useCallback(
+    async (file: AttachmentUpload) => {
+      setStatus('Загрузка изображения…')
+      try {
+        const url = await uploadInlineImage(file)
         setDirty(true)
-        setStatus('Скриншот добавлен — нажмите «Сохранить»')
+        setStatus('Изображение вставлено — нажмите «Сохранить»')
+        return url
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Не удалось загрузить изображение')
+        throw error
       }
-    }
-
-    window.addEventListener('paste', onPaste)
-    return () => window.removeEventListener('paste', onPaste)
-  }, [data])
-
-  const htmlDescription = useMemo(() => {
-    const original = data?.description || ''
-    return pendingRemovedUrls.reduce(
-      (html, url) => removeImageFromDescription(html, url),
-      original,
-    )
-  }, [data?.description, pendingRemovedUrls])
-  const embeddedUrls = useMemo(() => descriptionImageUrls(htmlDescription), [htmlDescription])
-  const embeddedImages = useMemo(
-    () =>
-      [...embeddedUrls].map((src) => ({
-        id: src,
-        src,
-        alt:
-          data?.attachments.find((file) => mediaUrlsMatch(file.url, src))?.name ||
-          'Изображение в описании',
-      })),
-    [embeddedUrls, data?.attachments],
+    },
+    [uploadInlineImage],
   )
-  const visibleAttachments = useMemo(
-    () =>
-      (data?.attachments ?? []).filter(
-        (file) => !pendingRemovedUrls.some((url) => mediaUrlsMatch(url, file.url)),
-      ),
-    [data?.attachments, pendingRemovedUrls],
+
+  const onCommentUpload = useCallback(
+    async (file: AttachmentUpload) => {
+      setStatus('Загрузка изображения…')
+      try {
+        const url = await uploadInlineImage(file)
+        setStatus('Изображение вставлено в комментарий')
+        return url
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : 'Не удалось загрузить изображение')
+        throw error
+      }
+    },
+    [uploadInlineImage],
   )
-  const canSendComment = Boolean(comment.trim() || commentImages.length)
+
+  const canSendComment = !isRichTextEmpty(comment)
+  const draftBody = bodyHtml ?? serverBodyHtml
   const canSaveBody =
     dirty &&
     (title.trim() !== (data?.title ?? '') ||
-      description !== htmlToPlainText(data?.description ?? '') ||
-      iterationPath !== (data?.iterationPath || '') ||
-      descriptionImages.length > 0 ||
-      pendingRemovedUrls.length > 0)
-
-  const markAttachmentRemoved = (url: string) => {
-    setPendingRemovedUrls((current) =>
-      current.some((entry) => mediaUrlsMatch(entry, url)) ? current : [...current, url],
-    )
-    setDirty(true)
-    setStatus('Вложение будет удалено при сохранении')
-  }
+      draftBody !== serverBodyHtml ||
+      iterationPath !== (data?.iterationPath || ''))
 
   const saveBody = async () => {
     if (!data || !canSaveBody) return
     setSavingBody(true)
     try {
-      let rev = data.rev
-      let html = data.description ?? ''
-
-      for (const url of pendingRemovedUrls) {
-        const detail = await removeAttachment.mutateAsync(url)
-        rev = detail.rev
-        html = detail.description || html
-      }
-
-      for (const image of descriptionImages) {
-        const detail = await upload.mutateAsync({
-          fileName: image.fileName,
-          mimeType: image.mimeType,
-          dataBase64: image.dataBase64,
-        })
-        rev = detail.rev
-        html = detail.description || html
-        const latest = detail.attachments[detail.attachments.length - 1]
-        if (latest?.url) {
-          html = appendImageToDescription(html, latest.url, image.fileName)
+      const previousUrls = descriptionImageUrls(serverBodyHtml)
+      const nextUrls = descriptionImageUrls(draftBody)
+      for (const url of previousUrls) {
+        if ([...nextUrls].some((entry) => mediaUrlsMatch(entry, url))) continue
+        try {
+          await requireAzureApi().removeAttachment(workItemId, url)
+        } catch {
+          // Continue saving even if relation cleanup fails.
         }
       }
 
-      html = mergePlainTextIntoDescription(html, description)
-
       const fields: Record<string, string | number | boolean | null | undefined> = {
         'System.Title': title.trim(),
-        'System.Description': html,
+        [bodyField]: draftBody,
       }
       const nextIteration = iterationPath.trim()
       const prevIteration = (data.iterationPath || '').trim()
@@ -324,13 +293,13 @@ export function WorkItemDetailPage() {
         fields['System.IterationPath'] = nextIteration || null
       }
 
+      // Re-read rev after possible attachment removals.
+      const fresh = await requireAzureApi().getWorkItem(workItemId)
       await update.mutateAsync({
         id: data.id,
-        rev,
+        rev: fresh.rev,
         fields,
       })
-      setDescriptionImages([])
-      setPendingRemovedUrls([])
       setDirty(false)
       setStatus('Сохранено')
       await qc.invalidateQueries({ queryKey: queryKeys.workItem(workItemId) })
@@ -400,44 +369,32 @@ export function WorkItemDetailPage() {
               {data.createdBy ? ` · Автор ${data.createdBy}` : ''}
               {` · Исполнитель ${data.assignedTo || 'Не назначен'}`}
             </div>
-            <div data-description-composer className="mt-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Описание
-                </div>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">Ctrl+V — вставить скриншот</span>
+            <div className="mt-4 space-y-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {isReproBody ? 'Шаги воспроизведения' : 'Описание'}
               </div>
-
-              {htmlDescription ? (
-                <AuthenticatedHtml
-                  className="prose prose-sm max-w-none rounded-lg border border-slate-100 bg-slate-50 p-3 text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 [&_img]:mt-2 [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:border [&_img]:border-slate-200 dark:[&_img]:border-slate-700"
-                  html={htmlDescription}
-                />
-              ) : null}
-
-              {embeddedImages.length > 0 && (
-                <RemovableImageStrip
-                  images={embeddedImages}
-                  disabled={savingBody}
-                  onRemove={markAttachmentRemoved}
-                />
-              )}
-
-              <Textarea
-                value={description}
-                onChange={(e) => {
-                  setDescription(e.target.value)
-                  setDirty(true)
+              <RichTextEditor
+                key={String(workItemId)}
+                value={displayBodyHtml}
+                onChange={(html) => {
+                  if (htmlPlainText(html).length < htmlPlainText(serverBodyHtml).length) {
+                    debugLog('[detail] ignore onChange that drops text', {
+                      incoming: htmlPlainText(html),
+                      server: htmlPlainText(serverBodyHtml),
+                    })
+                    return
+                  }
+                  setBodyHtml(html)
+                  if (html !== serverBodyHtml) setDirty(true)
                 }}
-                placeholder="Текст описания…"
-                className="min-h-[96px]"
-              />
-              <PendingImageStrip
-                images={descriptionImages}
-                onRemove={(imageId) => {
-                  setDescriptionImages((current) => current.filter((image) => image.id !== imageId))
-                  setDirty(true)
-                }}
+                onUploadImage={onBodyUpload}
+                placeholder={
+                  isReproBody
+                    ? 'Steps to Reproduce… Ctrl+V — скриншот'
+                    : 'Текст описания… Ctrl+V — скриншот'
+                }
+                minHeight={180}
+                data-composer="body"
               />
               <div className="flex justify-end">
                 <Button disabled={!canSaveBody || savingBody} onClick={() => void saveBody()}>
@@ -452,9 +409,8 @@ export function WorkItemDetailPage() {
             id="wi-discussion"
             className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
           >
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Обсуждение</h3>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">Ctrl+V — вставить скриншот</span>
             </div>
             <div className="mb-4 max-h-80 space-y-3 overflow-y-auto">
               {data.comments.length === 0 && (
@@ -476,34 +432,25 @@ export function WorkItemDetailPage() {
                     <span>{formatRelative(entry.createdDate)}</span>
                   </div>
                   <AuthenticatedHtml
-                    className="text-sm text-slate-800 dark:text-slate-200"
+                    className="max-w-none text-sm text-slate-800 dark:text-slate-200 [&_img]:mt-2 [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:border [&_img]:border-slate-200 dark:[&_img]:border-slate-700 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
                     html={renderCommentHtml(entry.text)}
                   />
                 </div>
               ))}
             </div>
-            <div data-comment-composer className="space-y-2">
-              <Textarea
+            <div className="space-y-2">
+              <RichTextEditor
                 value={comment}
-                onChange={(e) => setComment(e.target.value)}
+                onChange={setComment}
+                onUploadImage={onCommentUpload}
                 placeholder="Написать комментарий… Ctrl+V — скриншот"
-                className="min-h-[72px]"
-              />
-              <PendingImageStrip
-                images={commentImages}
-                onRemove={(imageId) =>
-                  setCommentImages((current) => current.filter((image) => image.id !== imageId))
-                }
+                minHeight={96}
+                data-composer="comment"
               />
               <div className="flex justify-end">
                 <Button
                   disabled={!canSendComment || addComment.isPending}
-                  onClick={() =>
-                    addComment.mutate({
-                      text: comment.trim(),
-                      attachments: commentImages,
-                    })
-                  }
+                  onClick={() => addComment.mutate(comment)}
                 >
                   <Send className="h-4 w-4" />
                   {addComment.isPending ? 'Отправка…' : 'Отправить'}
@@ -549,117 +496,11 @@ export function WorkItemDetailPage() {
             </dl>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-2 text-left"
-              onClick={() => setAttachmentsOpen((current) => !current)}
-              aria-expanded={attachmentsOpen}
-            >
-              <h3 className="text-sm font-semibold">
-                Вложения
-                <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
-                  ({visibleAttachments.length})
-                </span>
-              </h3>
-              <ChevronDown
-                className={cn(
-                  'h-4 w-4 text-slate-400 transition',
-                  attachmentsOpen && 'rotate-180',
-                )}
-              />
-            </button>
-
-            {attachmentsOpen && (
-              <div className="mt-3 space-y-3">
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      const image = await requireAzureApi().readClipboardImage()
-                      if (!image) {
-                        setStatus('В буфере нет изображения')
-                        return
-                      }
-                      setStatus('Загрузка вложения…')
-                      await upload.mutateAsync(image)
-                      setStatus('Вложение загружено')
-                    }}
-                  >
-                    <Paperclip className="h-4 w-4" /> Вставить изображение
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {visibleAttachments.length === 0 && (
-                    <div className="text-sm text-slate-500">Нет вложений</div>
-                  )}
-                  {visibleAttachments.map((file) => {
-                    const embedded = [...embeddedUrls].some((url) => mediaUrlsMatch(url, file.url))
-                    return (
-                      <div key={file.id} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className="min-w-0 flex-1 truncate rounded-md border border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                            onClick={() => requireAzureApi().openExternal(file.url)}
-                          >
-                            {file.name}
-                            {embedded && (
-                              <span className="ml-2 text-[11px] text-slate-400">в описании</span>
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            className="shrink-0 rounded-full bg-slate-900/70 p-1 text-white hover:bg-slate-900 disabled:opacity-50"
-                            disabled={savingBody}
-                            onClick={() => markAttachmentRemoved(file.url)}
-                            aria-label={`Удалить ${file.name}`}
-                            title="Удалить"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                        {looksLikeImage(file.name, file.url) && (
-                          <div className="group relative">
-                            <AuthenticatedImage
-                              src={file.url}
-                              alt={file.name}
-                              className="max-h-48 w-full rounded-lg border object-contain"
-                            />
-                            <button
-                              type="button"
-                              className="absolute right-2 top-2 rounded-full bg-slate-900/70 p-0.5 text-white opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
-                              disabled={savingBody}
-                              onClick={() => markAttachmentRemoved(file.url)}
-                              aria-label={`Удалить ${file.name}`}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
           <Button variant="secondary" onClick={() => void refetch()}>
             Обновить
           </Button>
         </div>
       </div>
     </div>
-  )
-}
-
-function looksLikeImage(name: string, url: string) {
-  if (url.startsWith('data:image')) return true
-  return (
-    /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(name) ||
-    /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(url) ||
-    /\/_apis\/wit\/attachments\//i.test(url)
   )
 }
