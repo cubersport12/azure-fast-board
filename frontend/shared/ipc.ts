@@ -70,6 +70,10 @@ export const IPC_CHANNELS = {
   serviceHooksTest: 'serviceHooks:test',
   notificationsSecretsSet: 'notifications:secrets:set',
   notificationsHistory: 'notifications:history',
+  notificationsMarkRead: 'notifications:markRead',
+  notificationsMarkReadByWorkItem: 'notifications:markReadByWorkItem',
+  notificationsMarkAllRead: 'notifications:markAllRead',
+  notificationsClear: 'notifications:clear',
   notificationsTest: 'notifications:test',
   eventShowQuickCreate: 'event:showQuickCreate',
   eventShowCommandPalette: 'event:showCommandPalette',
@@ -137,6 +141,10 @@ export interface AzureFastBoardApi {
     notificationsApiToken?: string | null
   }) => Promise<AppSettings>
   getNotificationHistory: () => Promise<BoardNotification[]>
+  markNotificationRead: (id: string) => Promise<BoardNotification[]>
+  markNotificationsReadByWorkItem: (workItemId: number) => Promise<BoardNotification[]>
+  markAllNotificationsRead: () => Promise<BoardNotification[]>
+  clearNotifications: () => Promise<BoardNotification[]>
   testNotification: () => Promise<BoardNotification>
   onShowQuickCreate: (cb: () => void) => () => void
   onShowCommandPalette: (cb: () => void) => () => void

@@ -3,6 +3,7 @@ import {
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_SETTINGS,
   type AppSettings,
+  type BoardNotification,
   type ConnectionConfig,
   type NotificationSettings,
   type SavedView,
@@ -15,6 +16,7 @@ interface StoreSchema {
   settings: AppSettings
   connection: ConnectionConfig | null
   views: SavedView[]
+  notificationHistory: BoardNotification[]
   cache: {
     workItems: WorkItem[]
     updatedAt?: string
@@ -27,6 +29,7 @@ const store = new Store<StoreSchema>({
     settings: DEFAULT_SETTINGS,
     connection: null,
     views: [],
+    notificationHistory: [],
     cache: { workItems: [] },
   },
 })
@@ -49,10 +52,15 @@ function mergeNotificationSettings(
       passwordConfigured: Boolean(loadSmtpPassword()),
     },
   }
+  const maxCached = Number(raw?.maxCached)
   return {
     enabled: raw?.enabled ?? base.enabled,
     onlyAssignedToMe: raw?.onlyAssignedToMe ?? base.onlyAssignedToMe,
     apiUrl: raw?.apiUrl?.trim() ?? base.apiUrl,
+    maxCached:
+      Number.isFinite(maxCached) && maxCached > 0
+        ? Math.min(1000, Math.floor(maxCached))
+        : base.maxCached,
     events,
     providers,
   }
@@ -136,29 +144,32 @@ export function updateSettings(patch: Partial<AppSettings>) {
     : ((stored.notifications as NotificationSettings | undefined) ??
       DEFAULT_NOTIFICATION_SETTINGS)
 
+  const mergedNotifications = mergeNotificationSettings(notificationsSource)
+
   const toStore: AppSettings = {
     ...next,
     notifications: {
-      enabled: notificationsSource.enabled,
-      onlyAssignedToMe: notificationsSource.onlyAssignedToMe,
-      apiUrl: notificationsSource.apiUrl?.trim() || '',
-      events: { ...DEFAULT_NOTIFICATION_SETTINGS.events, ...notificationsSource.events },
+      enabled: mergedNotifications.enabled,
+      onlyAssignedToMe: mergedNotifications.onlyAssignedToMe,
+      apiUrl: mergedNotifications.apiUrl?.trim() || '',
+      maxCached: mergedNotifications.maxCached,
+      events: mergedNotifications.events,
       providers: {
         app: {
           ...DEFAULT_NOTIFICATION_SETTINGS.providers.app,
-          ...notificationsSource.providers.app,
+          ...mergedNotifications.providers.app,
         },
         mattermost: {
-          enabled: notificationsSource.providers.mattermost.enabled,
+          enabled: mergedNotifications.providers.mattermost.enabled,
           webhookUrlConfigured: false,
         },
         email: {
-          enabled: notificationsSource.providers.email.enabled,
-          to: notificationsSource.providers.email.to,
-          smtpHost: notificationsSource.providers.email.smtpHost,
-          smtpPort: notificationsSource.providers.email.smtpPort,
-          smtpSecure: notificationsSource.providers.email.smtpSecure,
-          smtpUser: notificationsSource.providers.email.smtpUser,
+          enabled: mergedNotifications.providers.email.enabled,
+          to: mergedNotifications.providers.email.to,
+          smtpHost: mergedNotifications.providers.email.smtpHost,
+          smtpPort: mergedNotifications.providers.email.smtpPort,
+          smtpSecure: mergedNotifications.providers.email.smtpSecure,
+          smtpUser: mergedNotifications.providers.email.smtpUser,
           passwordConfigured: false,
         },
       },
@@ -166,6 +177,8 @@ export function updateSettings(patch: Partial<AppSettings>) {
   }
 
   store.set('settings', toStore)
+  // Trim disk cache if max lowered.
+  saveNotificationHistory(getNotificationHistory())
   return getSettings()
 }
 
@@ -205,4 +218,16 @@ export function getCachedWorkItems() {
 
 export function setCachedWorkItems(items: WorkItem[]) {
   store.set('cache', { workItems: items, updatedAt: new Date().toISOString() })
+}
+
+export function getNotificationHistory(): BoardNotification[] {
+  const items = store.get('notificationHistory')
+  return Array.isArray(items) ? items : []
+}
+
+export function saveNotificationHistory(items: BoardNotification[]) {
+  const max = getSettings().notifications.maxCached || DEFAULT_NOTIFICATION_SETTINGS.maxCached
+  const limited = items.slice(0, Math.max(1, max))
+  store.set('notificationHistory', limited)
+  return limited
 }

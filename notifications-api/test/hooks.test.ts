@@ -68,6 +68,22 @@ describe('mapServiceHookPayload', () => {
     })
   })
 
+  it('falls back to resource.id as workItemId when on-prem omits workItemId', () => {
+    const event = mapServiceHookPayload({
+      id: 'evt-comment-2',
+      eventType: 'workitem.commented',
+      message: { markdown: '[Bug 25201](https://tfs/edit/25201) comment' },
+      resource: {
+        id: 25201,
+        fields: {
+          'System.Title': 'Тестовый баг',
+        },
+      },
+    })
+    expect(event?.workItemId).toBe(25201)
+    expect(event?.commentId).toBeUndefined()
+  })
+
   it('returns null without eventType', () => {
     expect(mapServiceHookPayload({ resource: { id: 1 } })).toBeNull()
   })

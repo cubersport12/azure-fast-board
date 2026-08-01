@@ -554,6 +554,16 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
     },
   )
   ipcMain.handle(IPC_CHANNELS.notificationsHistory, () => notificationService?.getHistory() ?? [])
+  ipcMain.handle(IPC_CHANNELS.notificationsMarkRead, (_e, id: string) =>
+    notificationService?.markRead(String(id || '')) ?? [],
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsMarkReadByWorkItem, (_e, workItemId: number) =>
+    notificationService?.markReadByWorkItemId(Number(workItemId)) ?? [],
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsMarkAllRead, () =>
+    notificationService?.markAllRead() ?? [],
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsClear, () => notificationService?.clearHistory() ?? [])
   ipcMain.handle(IPC_CHANNELS.notificationsTest, async () => {
     try {
       if (!notificationService) throw new Error('Notification service is not ready')

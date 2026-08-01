@@ -181,6 +181,26 @@ export function SettingsDialog() {
             Только мои work item / назначения мне
           </label>
 
+          <div className="space-y-1">
+            <Label htmlFor="notifications-max-cached">Макс. уведомлений в кэше</Label>
+            <Input
+              id="notifications-max-cached"
+              type="number"
+              min={1}
+              max={1000}
+              value={notifications.maxCached ?? 100}
+              onChange={(e) => {
+                const value = Number(e.target.value)
+                patchNotifications({
+                  maxCached: Number.isFinite(value) ? Math.min(1000, Math.max(1, Math.floor(value))) : 100,
+                })
+              }}
+            />
+            <p className="text-xs text-slate-500">
+              История хранится локально на этом компьютере (по умолчанию 100).
+            </p>
+          </div>
+
           <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
             <Label>Notifications API (WebSocket)</Label>
             <Input

@@ -93,6 +93,8 @@ export interface NotificationSettings {
    * When set, Electron subscribes via WebSocket; local poll is a fallback.
    */
   apiUrl: string
+  /** Max notifications kept on disk (electron-store). */
+  maxCached: number
   events: Record<NotificationEventType, boolean>
   providers: {
     app: AppNotificationProviderSettings
@@ -329,6 +331,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   onlyAssignedToMe: true,
   /** Direct URL for Electron main (not via Vite). Override in Settings if needed. */
   apiUrl: 'http://172.22.91.47:8787',
+  maxCached: 100,
   events: {
     'workitem.created': true,
     'workitem.updated': true,

@@ -4,13 +4,20 @@ import type { BoardNotification, NotificationSettings } from '../../../shared/ty
 import { loadMattermostWebhookUrl, loadSmtpPassword } from '../credentials'
 import { applyInsecureTls, azureFetch } from '../azure/http'
 import { clearTaskbarAttention, requestTaskbarAttention } from './attention'
-import { formatWindowsNotification, notificationOpenRoute } from './format'
+import {
+  formatWindowsNotification,
+  healNotificationIds,
+  notificationOpenRoute,
+} from './format'
 import { sendSmtpMail } from './smtp'
 
 export interface ProviderContext {
   getMainWindow: () => Electron.BrowserWindow | null
   insecureTls: boolean
 }
+
+/** Keep toast instances alive so click handlers are not GC'd by V8. */
+const liveToasts = new Set<Notification>()
 
 export async function deliverToProviders(
   notification: BoardNotification,
@@ -38,18 +45,32 @@ export async function deliverToProviders(
 }
 
 function openFromNotification(notification: BoardNotification, ctx: ProviderContext) {
-  const route = notificationOpenRoute(notification)
+  const route = notificationOpenRoute(healNotificationIds(notification))
   // Deleted (and other non-openable) — do nothing on click.
-  if (!route) return
+  if (!route) {
+    console.log('[notifications] toast click ignored — no open route')
+    return
+  }
 
   const win = ctx.getMainWindow()
-  if (!win || win.isDestroyed()) return
+  if (!win || win.isDestroyed()) {
+    console.warn('[notifications] toast click — main window missing')
+    return
+  }
 
   clearTaskbarAttention(win)
   if (win.isMinimized()) win.restore()
   if (!win.isVisible()) win.show()
   win.focus()
-  win.webContents.send(IPC_CHANNELS.eventNavigate, route)
+
+  // Navigate after the window is shown; HashRouter listens via eventNavigate.
+  const send = () => {
+    if (win.isDestroyed()) return
+    console.log(`[notifications] navigate ${route}`)
+    win.webContents.send(IPC_CHANNELS.eventNavigate, route)
+  }
+  setTimeout(send, 50)
+  setTimeout(send, 250)
 }
 
 async function deliverApp(
@@ -62,7 +83,6 @@ async function deliverApp(
     requestTaskbarAttention(win)
   }
 
-  // History replay should not spam Action Center.
   if (notification.read) return
 
   if (settings.providers.app.showToast && Notification.isSupported()) {
@@ -73,7 +93,11 @@ async function deliverApp(
       silent: false,
       timeoutType: 'default',
     })
+    liveToasts.add(toast)
     toast.on('click', () => openFromNotification(notification, ctx))
+    toast.on('close', () => {
+      liveToasts.delete(toast)
+    })
     toast.show()
   }
 }

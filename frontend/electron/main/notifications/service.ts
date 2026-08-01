@@ -2,15 +2,22 @@ import { randomUUID } from 'node:crypto'
 import { IPC_CHANNELS } from '../../../shared/ipc'
 import type { BoardNotification, NotificationEventType, WorkItem } from '../../../shared/types'
 import type { AzureClient } from '../azure/client'
-import { getConnection, getSettings } from '../store'
+import {
+  getConnection,
+  getNotificationHistory,
+  getSettings,
+  saveNotificationHistory,
+} from '../store'
 import { clearTaskbarAttention } from './attention'
 import { diffWorkItems } from './diff'
-import { formatWindowsNotification } from './format'
+import {
+  extractWorkItemIdFromText,
+  healNotificationIds,
+  notificationBelongsToWorkItem,
+} from './format'
 import { anyIdentityMatch } from './identity'
 import { deliverToProviders } from './providers'
 import { NotificationsWsClient, type RealtimeBoardEvent } from './ws-client'
-
-const HISTORY_LIMIT = 50
 
 /** True when event assignee matches current user. Missing assignee → unknown (null). */
 function isEventAssignedToMe(
@@ -40,10 +47,25 @@ export class NotificationService {
   constructor(
     private readonly getClient: () => AzureClient | null,
     private readonly getMainWindow: () => Electron.BrowserWindow | null,
-  ) {}
+  ) {
+    this.history = getNotificationHistory().map(healNotificationIds)
+    this.persistHistory()
+    for (const item of this.history) {
+      if (item.id) this.seenEventIds.add(item.id)
+    }
+  }
+
+  private historyLimit() {
+    return Math.max(1, getSettings().notifications.maxCached || 100)
+  }
+
+  private persistHistory() {
+    this.history = saveNotificationHistory(this.history)
+  }
 
   start() {
     this.stop()
+    this.history = getNotificationHistory().map(healNotificationIds)
     const settings = getSettings()
     if (!settings.notifications.enabled) return
 
@@ -107,6 +129,48 @@ export class NotificationService {
     return [...this.history]
   }
 
+  markRead(id: string) {
+    let changed = false
+    this.history = this.history.map((item) => {
+      if (item.id !== id || item.read) return item
+      changed = true
+      return { ...item, read: true }
+    })
+    if (changed) this.persistHistory()
+    return this.getHistory()
+  }
+
+  /** Mark all notifications for a work item as read (user opened the card). */
+  markReadByWorkItemId(workItemId: number) {
+    if (!Number.isFinite(workItemId) || workItemId <= 0) return this.getHistory()
+    let changed = false
+    this.history = this.history.map((item) => {
+      const healed = healNotificationIds(item)
+      if (!notificationBelongsToWorkItem(healed, workItemId)) {
+        return healed === item ? item : healed
+      }
+      if (healed.read && healed.workItemId === item.workItemId && healed.commentId === item.commentId) {
+        return item
+      }
+      changed = true
+      return { ...healed, read: true }
+    })
+    if (changed) this.persistHistory()
+    return this.getHistory()
+  }
+
+  markAllRead() {
+    this.history = this.history.map((item) => (item.read ? item : { ...item, read: true }))
+    this.persistHistory()
+    return this.getHistory()
+  }
+
+  clearHistory() {
+    this.history = []
+    this.persistHistory()
+    return this.getHistory()
+  }
+
   async test(): Promise<BoardNotification> {
     const notification: BoardNotification = {
       id: randomUUID(),
@@ -135,10 +199,15 @@ export class NotificationService {
   }
 
   private async dispatch(notification: BoardNotification) {
-    this.history = [notification, ...this.history].slice(0, HISTORY_LIMIT)
+    if (!this.history.some((item) => item.id === notification.id)) {
+      this.history = [notification, ...this.history].slice(0, this.historyLimit())
+      this.persistHistory()
+    }
     this.emitToRenderer(notification)
     const settings = getSettings()
     if (!settings.notifications.enabled) return
+    // Disk/history replay should not spam Windows Action Center.
+    if (notification.read) return
     await deliverToProviders(notification, settings.notifications, {
       getMainWindow: this.getMainWindow,
       insecureTls: settings.insecureTls,
@@ -209,26 +278,26 @@ export class NotificationService {
       }
     }
 
-    const draft: BoardNotification = {
+    const draft = healNotificationIds({
       id: event.id || randomUUID(),
       eventType: event.eventType,
-      title: '',
+      title:
+        event.workItemTitle ||
+        event.message ||
+        `${event.eventType}${event.workItemId ? ` #${event.workItemId}` : ''}`,
       body: event.message || event.workItemTitle || 'Событие доски',
-      workItemId: event.workItemId,
+      workItemId: event.workItemId || extractWorkItemIdFromText(event.message),
       workItemTitle: event.workItemTitle,
       workItemType: event.workItemType,
       commentId: event.commentId,
       createdAt: event.createdAt || new Date().toISOString(),
       source: 'azure-service-hook',
       read: Boolean(options?.fromHistory),
-    }
-    const formatted = formatWindowsNotification(draft)
-    draft.title = formatted.title
-    draft.body = formatted.body
+    })
 
     console.log(
-      `[notifications] dispatch ${eventTypeRaw} #${event.workItemId ?? '-'}` +
-        (event.commentId ? ` commentId=${event.commentId}` : '') +
+      `[notifications] dispatch ${eventTypeRaw} #${draft.workItemId ?? '-'}` +
+        (draft.commentId ? ` commentId=${draft.commentId}` : '') +
         (options?.fromHistory ? ' (history)' : ''),
     )
 

@@ -23,6 +23,7 @@ import {
   mergePlainTextIntoDescription,
   removeImageFromDescription,
 } from '@/lib/html-text'
+import { notificationBelongsToWorkItem } from '@/lib/notification-route'
 import { cn, formatRelative, workItemColor } from '@/lib/utils'
 import { useNotificationsStore } from '@/stores/notifications-store'
 
@@ -54,9 +55,31 @@ export function WorkItemDetailPage() {
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
 
+  // Opening a card means the user has seen related notifications — mark them read.
   useEffect(() => {
     if (!Number.isFinite(workItemId) || workItemId <= 0) return
     markReadByWorkItemId(workItemId)
+    const api = window.azureFastBoard
+    if (!api?.markNotificationsReadByWorkItem) return
+    void api
+      .markNotificationsReadByWorkItem(workItemId)
+      .then((history) => useNotificationsStore.getState().seed(history))
+      .catch(() => undefined)
+  }, [workItemId, markReadByWorkItemId])
+
+  // New notification while this card is open → also mark read.
+  useEffect(() => {
+    if (!Number.isFinite(workItemId) || workItemId <= 0) return
+    const api = window.azureFastBoard
+    if (!api?.onNotification || !api.markNotificationsReadByWorkItem) return
+    return api.onNotification((notification) => {
+      if (!notificationBelongsToWorkItem(notification, workItemId)) return
+      markReadByWorkItemId(workItemId)
+      void api
+        .markNotificationsReadByWorkItem(workItemId)
+        .then((history) => useNotificationsStore.getState().seed(history))
+        .catch(() => undefined)
+    })
   }, [workItemId, markReadByWorkItemId])
 
   useEffect(() => {

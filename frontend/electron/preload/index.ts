@@ -70,6 +70,11 @@ const api: AzureFastBoardApi = {
   setNotificationSecrets: (secrets) =>
     ipcRenderer.invoke(IPC_CHANNELS.notificationsSecretsSet, secrets),
   getNotificationHistory: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsHistory),
+  markNotificationRead: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkRead, id),
+  markNotificationsReadByWorkItem: (workItemId: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkReadByWorkItem, workItemId),
+  markAllNotificationsRead: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkAllRead),
+  clearNotifications: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsClear),
   testNotification: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsTest),
   onShowQuickCreate: (cb) => subscribe(IPC_CHANNELS.eventShowQuickCreate, cb),
   onShowCommandPalette: (cb) => subscribe(IPC_CHANNELS.eventShowCommandPalette, cb),

@@ -22,6 +22,22 @@ describe('notifications store', () => {
     expect(useNotificationsStore.getState().unreadCount()).toBe(0)
   })
 
+  it('marks mis-mapped comment notifications when opening work item', () => {
+    useNotificationsStore.getState().push({
+      id: 'b',
+      eventType: 'workitem.commented',
+      title: 'Comment',
+      body: '[Bug 25201](https://tfs/edit/25201)',
+      commentId: 25201,
+      createdAt: '2026-07-30T06:00:00Z',
+    })
+    expect(useNotificationsStore.getState().unreadCount()).toBe(1)
+
+    useNotificationsStore.getState().markReadByWorkItemId(25201)
+    expect(useNotificationsStore.getState().items[0]?.read).toBe(true)
+    expect(useNotificationsStore.getState().items[0]?.workItemId).toBe(25201)
+  })
+
   it('dedupes by id', () => {
     const item = {
       id: 'same',

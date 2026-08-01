@@ -2,20 +2,14 @@ import { Bell, CheckCheck, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { requireAzureApi } from '@/lib/azure-api'
+import {
+  formatWindowsNotification,
+  healNotificationIds,
+  notificationOpenTarget,
+} from '@/lib/notification-route'
 import { cn, formatRelative } from '@/lib/utils'
 import { useNotificationsStore, type UiNotification } from '@/stores/notifications-store'
-
-const EVENT_LABEL: Record<string, string> = {
-  'workitem.created': 'Создано',
-  'workitem.updated': 'Обновлено',
-  'workitem.commented': 'Комментарий',
-  'workitem.assigned': 'Назначение',
-  'workitem.deleted': 'Удалено',
-}
-
-function eventLabel(eventType: string) {
-  return EVENT_LABEL[eventType] || eventType.replace(/^workitem\./, '')
-}
 
 export function NotificationsBellButton({ disabled }: { disabled?: boolean }) {
   const items = useNotificationsStore((s) => s.items)
@@ -65,14 +59,18 @@ export function NotificationsDrawer() {
 
   const openItem = (item: UiNotification) => {
     markRead(item.id)
+    void requireAzureApi()
+      .markNotificationRead(item.id)
+      .then((history) => useNotificationsStore.getState().seed(history))
+      .catch(() => undefined)
     setDrawerOpen(false)
-    const type = String(item.eventType).toLowerCase()
-    if (!item.workItemId || type.includes('deleted')) return
-    if (type.includes('commented') && item.commentId) {
-      navigate(`/work-items/${item.workItemId}?commentId=${item.commentId}`)
-      return
-    }
-    navigate(`/work-items/${item.workItemId}`)
+
+    const target = notificationOpenTarget(item)
+    if (!target) return
+    // Close drawer first, then navigate (HashRouter).
+    window.setTimeout(() => {
+      navigate({ pathname: target.pathname, search: target.search || '' })
+    }, 0)
   }
 
   return (
@@ -102,7 +100,13 @@ export function NotificationsDrawer() {
             variant="ghost"
             disabled={unread === 0}
             title="Прочитать все"
-            onClick={() => markAllRead()}
+            onClick={() => {
+              markAllRead()
+              void requireAzureApi()
+                .markAllNotificationsRead()
+                .then((history) => useNotificationsStore.getState().seed(history))
+                .catch(() => undefined)
+            }}
           >
             <CheckCheck className="h-4 w-4" />
           </Button>
@@ -111,7 +115,13 @@ export function NotificationsDrawer() {
             variant="ghost"
             disabled={items.length === 0}
             title="Очистить"
-            onClick={() => clear()}
+            onClick={() => {
+              clear()
+              void requireAzureApi()
+                .clearNotifications()
+                .then((history) => useNotificationsStore.getState().seed(history))
+                .catch(() => undefined)
+            }}
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -127,50 +137,47 @@ export function NotificationsDrawer() {
             </div>
           )}
           <ul className="space-y-1">
-            {items.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => openItem(item)}
-                  className={cn(
-                    'w-full rounded-lg border px-3 py-2.5 text-left transition',
-                    item.read
-                      ? 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/80'
-                      : 'border-sky-200 bg-sky-50/70 hover:bg-sky-50 dark:border-sky-900 dark:bg-sky-950/40 dark:hover:bg-sky-950/60',
-                  )}
-                >
-                  <div className="mb-1 flex items-center gap-2">
-                    {!item.read && (
-                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden />
-                    )}
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      {eventLabel(String(item.eventType))}
-                    </span>
-                    <span className="ml-auto shrink-0 text-[11px] text-slate-400">
-                      {formatRelative(item.createdAt)}
-                    </span>
-                  </div>
-                  <div
+            {items.map((item) => {
+              const formatted = formatWindowsNotification(healNotificationIds(item))
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => openItem(item)}
                     className={cn(
-                      'truncate text-sm',
+                      'w-full rounded-lg border px-3 py-2.5 text-left transition',
                       item.read
-                        ? 'text-slate-700 dark:text-slate-300'
-                        : 'font-medium text-slate-900 dark:text-slate-100',
+                        ? 'border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/80'
+                        : 'border-sky-200 bg-sky-50/70 hover:bg-sky-50 dark:border-sky-900 dark:bg-sky-950/40 dark:hover:bg-sky-950/60',
                     )}
                   >
-                    {item.workItemTitle || item.title}
-                    {item.workItemId ? (
-                      <span className="ml-1 font-normal text-slate-500">#{item.workItemId}</span>
-                    ) : null}
-                  </div>
-                  {item.body && item.body !== item.workItemTitle && (
-                    <div className="mt-0.5 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-                      {item.body}
+                    <div className="mb-1 flex items-center gap-2">
+                      {!item.read && (
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden />
+                      )}
+                      <span
+                        className={cn(
+                          'truncate text-[12px]',
+                          item.read
+                            ? 'font-medium text-slate-700 dark:text-slate-300'
+                            : 'font-semibold text-slate-900 dark:text-slate-100',
+                        )}
+                      >
+                        {formatted.title}
+                      </span>
+                      <span className="ml-auto shrink-0 text-[11px] text-slate-400">
+                        {formatRelative(item.createdAt)}
+                      </span>
                     </div>
-                  )}
-                </button>
-              </li>
-            ))}
+                    {formatted.body && (
+                      <div className="line-clamp-3 whitespace-pre-line text-xs text-slate-500 dark:text-slate-400">
+                        {formatted.body}
+                      </div>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         </div>
       </aside>

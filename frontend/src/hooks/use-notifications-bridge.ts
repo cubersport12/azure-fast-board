@@ -21,7 +21,8 @@ export function useNotificationsBridge() {
 
     let cancelled = false
     void api.getNotificationHistory().then((history) => {
-      if (!cancelled && Array.isArray(history)) seed(history)
+      if (cancelled) return
+      if (Array.isArray(history)) seed(history)
     })
 
     const unsubNotify = api.onNotification((notification) => {
@@ -36,7 +37,6 @@ export function useNotificationsBridge() {
     const unsubInvalidate = api.onWorkItemsInvalidate?.((payload) => {
       void qc.invalidateQueries({ queryKey: queryKeys.workItems })
       if (payload?.reason) {
-        // detail cache may be stale after create/delete fan-out
         void qc.invalidateQueries({ queryKey: ['workItem'] })
       }
     })
