@@ -48,6 +48,76 @@ export interface SubscribedIteration {
   name: string
 }
 
+/** In-app / Mattermost / email notification providers. */
+export type NotificationProviderId = 'app' | 'mattermost' | 'email'
+
+/** Work-item events we surface as notifications (ADO Service Hooks eventType). */
+export type NotificationEventType =
+  | 'workitem.created'
+  | 'workitem.updated'
+  | 'workitem.commented'
+  | 'workitem.assigned'
+  | 'workitem.deleted'
+
+export interface AppNotificationProviderSettings {
+  enabled: boolean
+  /** Windows toast / Electron Notification. */
+  showToast: boolean
+  /** Classic taskbar flash when window is not focused (no full restore). */
+  flashTaskbar: boolean
+}
+
+export interface MattermostNotificationProviderSettings {
+  enabled: boolean
+  /** Incoming webhook URL (secret stored separately when set via IPC). */
+  webhookUrlConfigured: boolean
+  /** Mattermost server base URL, e.g. https://mm.example.com */
+  baseUrl: string
+  /** Username, email or LDAP id for session login (password is encrypted separately). */
+  loginId: string
+  /** Password stored in encrypted secrets, not in settings JSON. */
+  passwordConfigured: boolean
+  /** After creating a work item, post a formatted card to MM (DM to self). */
+  notifyOnCreate: boolean
+}
+
+export interface EmailNotificationProviderSettings {
+  enabled: boolean
+  to: string
+  smtpHost: string
+  smtpPort: number
+  smtpSecure: boolean
+  smtpUser: string
+  /** Password stored in encrypted secrets, not in settings JSON. */
+  passwordConfigured: boolean
+}
+
+export interface NotificationSettings {
+  enabled: boolean
+  /** Only notify about items assigned to the current user (and new assignments). */
+  onlyAssignedToMe: boolean
+  /**
+   * Base URL of notifications-api (e.g. http://host:8787).
+   * When set, Electron subscribes via WebSocket; local poll is a fallback.
+   */
+  apiUrl: string
+  /** Max notifications kept on disk (electron-store). */
+  maxCached: number
+  events: Record<NotificationEventType, boolean>
+  providers: {
+    app: AppNotificationProviderSettings
+    mattermost: MattermostNotificationProviderSettings
+    email: EmailNotificationProviderSettings
+  }
+}
+
+/** Persisted favorite row for Dropdown (value alone is not enough for async search lists). */
+export interface SelectFavoriteOption {
+  value: string
+  label: string
+  description?: string
+}
+
 export interface AppSettings {
   launchMinimized: boolean
   hideToTrayOnClose: boolean
@@ -71,6 +141,53 @@ export interface AppSettings {
     creators: string[]
     tags: string[]
   }
+  /** Starred dropdown options keyed by Dropdown `favoritesKey` (keeps label for search-backed lists). */
+  selectFavorites: Record<string, SelectFavoriteOption[]>
+  notifications: NotificationSettings
+}
+
+/** Azure DevOps Service Hooks subscription (subset used by the app). */
+export interface ServiceHookSubscription {
+  id: string
+  url?: string
+  publisherId: string
+  eventType: string
+  resourceVersion?: string
+  eventDescription?: string
+  consumerId: string
+  consumerActionId: string
+  actionDescription?: string
+  publisherInputs?: Record<string, string>
+  consumerInputs?: Record<string, string>
+  status?: string
+  createdDate?: string
+  modifiedDate?: string
+}
+
+export interface ServiceHookCreateInput {
+  eventType: NotificationEventType | string
+  /** Target webhook URL (Mattermost, custom receiver, etc.). */
+  webhookUrl: string
+  /** Optional ADO publisher filters (areaPath, workItemType, …). */
+  publisherInputs?: Record<string, string>
+  resourceVersion?: string
+}
+
+export interface BoardNotification {
+  id: string
+  eventType: NotificationEventType | string
+  title: string
+  body: string
+  workItemId?: number
+  workItemTitle?: string
+  workItemType?: string
+  /** Present for workitem.commented (ADO comment id). */
+  commentId?: number
+  createdAt: string
+  /** Where the event came from. */
+  source?: 'poll' | 'websocket' | 'test' | 'azure-service-hook'
+  /** Renderer-owned; main process may omit (treated as unread). */
+  read?: boolean
 }
 
 export interface WorkItem {
@@ -92,8 +209,14 @@ export interface WorkItem {
   changedDate?: string
   createdDate?: string
   description?: string
+  /** Bug / TCM: Microsoft.VSTS.TCM.ReproSteps (Steps to Reproduce). */
+  reproSteps?: string
   url?: string
 }
+
+/** Azure DevOps HTML body fields used by the detail editor. */
+export const ADO_FIELD_DESCRIPTION = 'System.Description'
+export const ADO_FIELD_REPRO_STEPS = 'Microsoft.VSTS.TCM.ReproSteps'
 
 export interface WorkItemComment {
   id: number
@@ -131,8 +254,8 @@ export interface CreateWorkItemInput {
 
 export interface AddCommentInput {
   id: number
+  /** HTML (or legacy plain text) comment body. Inline images use <img src="…">. */
   text: string
-  attachments?: AttachmentUpload[]
 }
 
 export interface PatchWorkItemInput {
@@ -226,6 +349,45 @@ export interface IterationPathsResult {
   iterations: IterationPathOption[]
 }
 
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  enabled: true,
+  onlyAssignedToMe: true,
+  /** Direct URL for Electron main (not via Vite). Override in Settings if needed. */
+  apiUrl: 'http://172.22.91.47:8787',
+  maxCached: 100,
+  events: {
+    'workitem.created': true,
+    'workitem.updated': true,
+    'workitem.commented': true,
+    'workitem.assigned': true,
+    'workitem.deleted': true,
+  },
+  providers: {
+    app: {
+      enabled: true,
+      showToast: true,
+      flashTaskbar: true,
+    },
+    mattermost: {
+      enabled: false,
+      webhookUrlConfigured: false,
+      baseUrl: '',
+      loginId: '',
+      passwordConfigured: false,
+      notifyOnCreate: false,
+    },
+    email: {
+      enabled: false,
+      to: '',
+      smtpHost: '',
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpUser: '',
+      passwordConfigured: false,
+    },
+  },
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   launchMinimized: true,
   hideToTrayOnClose: true,
@@ -245,6 +407,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     creators: [],
     tags: [],
   },
+  selectFavorites: {},
+  notifications: DEFAULT_NOTIFICATION_SETTINGS,
 }
 
 export const DEFAULT_CONNECTION: ConnectionConfig = {

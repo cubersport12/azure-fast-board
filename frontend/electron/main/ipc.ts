@@ -7,13 +7,36 @@ import type {
   CreateWorkItemInput,
   PatchWorkItemInput,
   SavedView,
+  ServiceHookCreateInput,
   SyncStatus,
   WorkItemDetail,
 } from '../../shared/types'
 import { AzureClient } from './azure/client'
 import { applyInsecureTls } from './azure/http'
-import { clearSecrets, loadPassword, loadPat, savePassword, savePat } from './credentials'
+import {
+  clearSecrets,
+  loadMattermostPassword,
+  loadPassword,
+  loadPat,
+  saveMattermostPassword,
+  saveMattermostWebhookUrl,
+  savePassword,
+  savePat,
+  saveSmtpPassword,
+  saveNotificationsApiToken,
+} from './credentials'
 import { toIpcError } from './ipc-error'
+import {
+  connectMattermostAndPingSelf,
+  getMattermostConfigured,
+  listMattermostChannels,
+  listMattermostTeams,
+  notifyWorkItemCreatedToMattermostIfEnabled,
+  getMattermostUsersByIds,
+  searchMattermostUsers,
+  shareWorkItemToMattermost,
+} from './mattermost/client'
+import { NotificationService } from './notifications'
 import {
   clearConnection,
   deleteView,
@@ -26,6 +49,12 @@ import {
   setCachedWorkItems,
   updateSettings,
 } from './store'
+
+let notificationService: NotificationService | null = null
+
+export function getNotificationService() {
+  return notificationService
+}
 
 let syncStatus: SyncStatus = { state: 'idle' }
 
@@ -115,10 +144,21 @@ function withTls() {
 export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow | null) {
   withTls()
 
+  notificationService = new NotificationService(getClient, getMainWindow)
+  notificationService.start()
+
+  ipcMain.handle(IPC_CHANNELS.debugLog, (_e, message: string, data?: unknown) => {
+    if (data !== undefined) console.log(String(message || ''), data)
+    else console.log(String(message || ''))
+  })
+
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => getSettings())
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_e, patch) => {
+    const previous = getSettings()
     const next = updateSettings(patch)
     if (next.insecureTls) applyInsecureTls(true)
+    // Theme/filters/sprint must not bounce the WebSocket.
+    notificationService?.restartIfNeeded(previous, next)
     return next
   })
 
@@ -137,17 +177,22 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
         if (!pat?.trim()) throw new Error('PAT is required')
         savePat(pat.trim())
       }
-      return saveConnection({
+      const saved = saveConnection({
         ...rest,
         authMethod,
         serverUrl: normalizeServerUrl(rest.serverUrl),
         username: rest.username?.trim() || undefined,
       })
+      notificationService?.resetSnapshot()
+      notificationService?.restart()
+      return saved
     },
   )
   ipcMain.handle(IPC_CHANNELS.connectionClear, () => {
     clearSecrets()
     clearConnection()
+    notificationService?.resetSnapshot()
+    notificationService?.stop()
   })
   ipcMain.handle(IPC_CHANNELS.connectionVerify, async () => {
     try {
@@ -329,14 +374,24 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
     const { attachments = [], ...fields } = input
     const client = requireClient()
     const created = await client.createWorkItem(fields)
+    notificationService?.noteSelfAction(created.id)
     for (const file of attachments) {
       await client.uploadAttachment(created.id, file)
     }
+    // Auto MM notify (self DM) when enabled in settings — don't block create on MM errors.
+    void client
+      .getWorkItem(created.id)
+      .then((detail) =>
+        notifyWorkItemCreatedToMattermostIfEnabled(detail, (url) => client.downloadMedia(url)),
+      )
+      .catch((error) => console.warn('[mattermost] notify on create skipped:', error))
     return created
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsUpdate, async (_e, input: PatchWorkItemInput) => {
-    return requireClient().updateWorkItem(input)
+    const updated = await requireClient().updateWorkItem(input)
+    notificationService?.noteSelfAction(updated.id)
+    return updated
   })
 
   ipcMain.handle(
@@ -345,11 +400,15 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       const client = requireClient()
       const preferred = state?.trim() || column.trim()
       try {
-        return await client.moveWorkItem(id, column, rev, preferred)
+        const moved = await client.moveWorkItem(id, column, rev, preferred)
+        notificationService?.noteSelfAction(moved.id)
+        return moved
       } catch (error) {
         const fallback = columnStateFallback(column)
         if (fallback && fallback !== preferred) {
-          return client.moveWorkItem(id, column, rev, fallback)
+          const moved = await client.moveWorkItem(id, column, rev, fallback)
+          notificationService?.noteSelfAction(moved.id)
+          return moved
         }
         throw error
       }
@@ -361,23 +420,16 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsAddComment, async (_e, input: AddCommentInput) => {
-    const { id, text, attachments = [] } = input
-    const client = requireClient()
-    const uploadedUrls: string[] = []
-
-    for (const file of attachments) {
-      const detail = await client.uploadAttachment(id, file)
-      const latest = detail.attachments[detail.attachments.length - 1]
-      if (latest?.url) uploadedUrls.push(latest.url)
-    }
-
-    const imageBlocks = uploadedUrls.map((url, index) => `![screenshot-${index + 1}](${url})`)
-    const body = [text.trim(), ...imageBlocks].filter(Boolean).join('\n\n')
+    const { id, text } = input
+    const body = String(text || '').trim()
     if (!body) throw new Error('Comment is empty')
-    return client.addComment(id, body)
+    notificationService?.noteSelfAction(id)
+    // Images are uploaded in the renderer and already inlined as <img> in HTML.
+    return requireClient().addComment(id, body)
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsUploadAttachment, async (_e, id: number, file: AttachmentUpload) => {
+    notificationService?.noteSelfAction(id)
     return requireClient().uploadAttachment(id, file)
   })
 
@@ -465,6 +517,199 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   ipcMain.handle(IPC_CHANNELS.openExternal, (_e, url: string) => {
     if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('data:')) {
       return shell.openExternal(url)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.serviceHooksList, async () => {
+    try {
+      return await requireClient().listServiceHooks()
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksGet, async (_e, id: string) => {
+    try {
+      return await requireClient().getServiceHook(String(id || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksCreate, async (_e, input: ServiceHookCreateInput) => {
+    try {
+      return await requireClient().createServiceHook(input)
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksDelete, async (_e, id: string) => {
+    try {
+      await requireClient().deleteServiceHook(String(id || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.serviceHooksTest, async (_e, id: string) => {
+    try {
+      return await requireClient().testServiceHook(String(id || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.notificationsSecretsSet,
+    (
+      _e,
+      secrets: {
+        mattermostWebhookUrl?: string | null
+        mattermostPassword?: string | null
+        smtpPassword?: string | null
+        notificationsApiToken?: string | null
+      },
+    ) => {
+      if (secrets.mattermostWebhookUrl !== undefined) {
+        saveMattermostWebhookUrl(secrets.mattermostWebhookUrl)
+      }
+      if (secrets.mattermostPassword !== undefined) {
+        saveMattermostPassword(secrets.mattermostPassword)
+      }
+      if (secrets.smtpPassword !== undefined) {
+        saveSmtpPassword(secrets.smtpPassword)
+      }
+      if (secrets.notificationsApiToken !== undefined) {
+        saveNotificationsApiToken(secrets.notificationsApiToken)
+      }
+      notificationService?.restart()
+      return getSettings()
+    },
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.mattermostConnect,
+    async (
+      _e,
+      input: { baseUrl?: string; loginId?: string; password?: string },
+    ) => {
+      try {
+        const settings = getSettings()
+        const baseUrl = String(input?.baseUrl || settings.notifications.providers.mattermost.baseUrl || '').trim()
+        const loginId = String(input?.loginId || settings.notifications.providers.mattermost.loginId || '').trim()
+        const typedPassword = String(input?.password || '')
+        if (typedPassword) {
+          saveMattermostPassword(typedPassword)
+        }
+        const password = typedPassword || loadMattermostPassword() || ''
+        updateSettings({
+          notifications: {
+            ...settings.notifications,
+            providers: {
+              ...settings.notifications.providers,
+              mattermost: {
+                ...settings.notifications.providers.mattermost,
+                baseUrl,
+                loginId,
+              },
+            },
+          },
+        })
+        return await connectMattermostAndPingSelf({
+          baseUrl,
+          loginId,
+          password,
+          insecureTls: settings.insecureTls,
+        })
+      } catch (error) {
+        throw toIpcError(error)
+      }
+    },
+  )
+
+  ipcMain.handle(IPC_CHANNELS.mattermostConfigured, () => getMattermostConfigured())
+
+  ipcMain.handle(IPC_CHANNELS.mattermostListTeams, async () => {
+    try {
+      return await listMattermostTeams()
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.mattermostListChannels, async (_e, teamId: string) => {
+    try {
+      return await listMattermostChannels(String(teamId || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.mattermostSearchUsers, async (_e, term: string) => {
+    try {
+      return await searchMattermostUsers(String(term || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.mattermostUsersByIds, async (_e, ids: string[]) => {
+    try {
+      return await getMattermostUsersByIds(Array.isArray(ids) ? ids.map(String) : [])
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.mattermostShareWorkItem,
+    async (
+      _e,
+      input: {
+        workItemId?: number
+        mode?: 'channel' | 'user'
+        teamId?: string
+        channelId?: string
+        userId?: string
+      },
+    ) => {
+      try {
+        const workItemId = Number(input?.workItemId)
+        if (!Number.isFinite(workItemId) || workItemId <= 0) {
+          return { ok: false, message: 'Некорректный work item' }
+        }
+        const detail = await requireClient().getWorkItem(workItemId)
+        const mode = input?.mode === 'user' ? 'user' : 'channel'
+        const target =
+          mode === 'user'
+            ? ({ mode: 'user', userId: String(input?.userId || '') } as const)
+            : ({
+                mode: 'channel',
+                teamId: String(input?.teamId || ''),
+                channelId: String(input?.channelId || ''),
+              } as const)
+        return await shareWorkItemToMattermost(detail, target, (url) =>
+          requireClient().downloadMedia(url),
+        )
+      } catch (error) {
+        throw toIpcError(error)
+      }
+    },
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsHistory, () => notificationService?.getHistory() ?? [])
+  ipcMain.handle(IPC_CHANNELS.notificationsMarkRead, (_e, id: string) =>
+    notificationService?.markRead(String(id || '')) ?? [],
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsMarkReadByWorkItem, (_e, workItemId: number) =>
+    notificationService?.markReadByWorkItemId(Number(workItemId)) ?? [],
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsMarkAllRead, () =>
+    notificationService?.markAllRead() ?? [],
+  )
+  ipcMain.handle(IPC_CHANNELS.notificationsClear, () => notificationService?.clearHistory() ?? [])
+  ipcMain.handle(IPC_CHANNELS.notificationsTest, async () => {
+    try {
+      if (!notificationService) throw new Error('Notification service is not ready')
+      return await notificationService.test()
+    } catch (error) {
+      throw toIpcError(error)
     }
   })
 

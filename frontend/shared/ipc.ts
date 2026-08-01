@@ -2,6 +2,7 @@ import type {
   AppSettings,
   AttachmentUpload,
   BoardColumn,
+  BoardNotification,
   ConnectionConfig,
   ConnectionCredentials,
   ConnectionTestResult,
@@ -11,6 +12,8 @@ import type {
   NamedEntity,
   PatchWorkItemInput,
   SavedView,
+  ServiceHookCreateInput,
+  ServiceHookSubscription,
   SyncStatus,
   AssigneeIdentity,
   AreaPathsResult,
@@ -60,10 +63,33 @@ export const IPC_CHANNELS = {
   autoLaunchSet: 'app:autoLaunch:set',
   clipboardReadImage: 'clipboard:readImage',
   openExternal: 'shell:openExternal',
+  serviceHooksList: 'serviceHooks:list',
+  serviceHooksGet: 'serviceHooks:get',
+  serviceHooksCreate: 'serviceHooks:create',
+  serviceHooksDelete: 'serviceHooks:delete',
+  serviceHooksTest: 'serviceHooks:test',
+  notificationsSecretsSet: 'notifications:secrets:set',
+  mattermostConnect: 'mattermost:connect',
+  mattermostConfigured: 'mattermost:configured',
+  mattermostListTeams: 'mattermost:listTeams',
+  mattermostListChannels: 'mattermost:listChannels',
+  mattermostSearchUsers: 'mattermost:searchUsers',
+  mattermostUsersByIds: 'mattermost:usersByIds',
+  mattermostShareWorkItem: 'mattermost:shareWorkItem',
+  notificationsHistory: 'notifications:history',
+  notificationsMarkRead: 'notifications:markRead',
+  notificationsMarkReadByWorkItem: 'notifications:markReadByWorkItem',
+  notificationsMarkAllRead: 'notifications:markAllRead',
+  notificationsClear: 'notifications:clear',
+  notificationsTest: 'notifications:test',
   eventShowQuickCreate: 'event:showQuickCreate',
   eventShowCommandPalette: 'event:showCommandPalette',
   eventNavigate: 'event:navigate',
   eventSyncStatus: 'event:syncStatus',
+  eventNotification: 'event:notification',
+  eventWorkItemsInvalidate: 'event:workItemsInvalidate',
+  /** Renderer → main terminal logs (DevTools console is easy to miss). */
+  debugLog: 'debug:log',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -113,8 +139,56 @@ export interface AzureFastBoardApi {
   setAutoLaunch: (enabled: boolean) => Promise<boolean>
   readClipboardImage: () => Promise<AttachmentUpload | null>
   openExternal: (url: string) => Promise<void>
+  listServiceHooks: () => Promise<ServiceHookSubscription[]>
+  getServiceHook: (id: string) => Promise<ServiceHookSubscription>
+  createServiceHook: (input: ServiceHookCreateInput) => Promise<ServiceHookSubscription>
+  deleteServiceHook: (id: string) => Promise<void>
+  testServiceHook: (id: string) => Promise<{ ok: boolean; message: string }>
+  setNotificationSecrets: (secrets: {
+    mattermostWebhookUrl?: string | null
+    mattermostPassword?: string | null
+    smtpPassword?: string | null
+    notificationsApiToken?: string | null
+  }) => Promise<AppSettings>
+  /**
+   * Save MM login (password encrypted), login via API, send a test DM to self.
+   * Pass password only when the user typed a new one; otherwise uses stored secret.
+   */
+  connectMattermost: (input: {
+    baseUrl: string
+    loginId: string
+    password?: string
+  }) => Promise<{ ok: boolean; message: string }>
+  isMattermostConfigured: () => Promise<boolean>
+  listMattermostTeams: () => Promise<Array<{ id: string; name: string; displayName?: string }>>
+  listMattermostChannels: (
+    teamId: string,
+  ) => Promise<Array<{ id: string; name: string; displayName?: string }>>
+  searchMattermostUsers: (
+    term: string,
+  ) => Promise<Array<{ id: string; name: string; displayName?: string }>>
+  getMattermostUsersByIds: (
+    ids: string[],
+  ) => Promise<Array<{ id: string; name: string; displayName?: string }>>
+  shareWorkItemToMattermost: (input: {
+    workItemId: number
+    mode: 'channel' | 'user'
+    teamId?: string
+    channelId?: string
+    userId?: string
+  }) => Promise<{ ok: boolean; message: string }>
+  getNotificationHistory: () => Promise<BoardNotification[]>
+  markNotificationRead: (id: string) => Promise<BoardNotification[]>
+  markNotificationsReadByWorkItem: (workItemId: number) => Promise<BoardNotification[]>
+  markAllNotificationsRead: () => Promise<BoardNotification[]>
+  clearNotifications: () => Promise<BoardNotification[]>
+  testNotification: () => Promise<BoardNotification>
   onShowQuickCreate: (cb: () => void) => () => void
   onShowCommandPalette: (cb: () => void) => () => void
   onNavigate: (cb: (route: string) => void) => () => void
   onSyncStatus: (cb: (status: SyncStatus) => void) => () => void
+  onNotification: (cb: (notification: BoardNotification) => void) => () => void
+  onWorkItemsInvalidate: (cb: (payload: { reason: string }) => void) => () => void
+  /** Print to the Electron main terminal (npm run dev). */
+  debugLog: (message: string, data?: unknown) => Promise<void>
 }

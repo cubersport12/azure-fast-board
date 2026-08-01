@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom'
 import type { WorkItem } from '../../../shared/types'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Badge } from '@/components/ui/primitives'
+import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
 import { useConnection, useCurrentUser, useSettings, useWorkItems } from '@/hooks/use-azure'
 import { usePersistedFilters } from '@/hooks/use-persisted-filters'
 import { applyWorkItemFilters } from '@/lib/work-item-filters'
@@ -85,6 +86,19 @@ export function WorkItemsPage() {
         cell: ({ getValue }) => formatRelative(String(getValue() || '')),
         size: 100,
       },
+      {
+        id: 'mattermost',
+        header: 'MM',
+        cell: ({ row }) => (
+          <div
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <SendToMattermostButton workItemId={row.original.id} compact />
+          </div>
+        ),
+        size: 48,
+      },
     ],
     [],
   )
@@ -125,7 +139,7 @@ export function WorkItemsPage() {
       <WorkItemFilterBar items={data} filters={filters} onChange={setFilters} />
       <div className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} рабочих элементов</div>
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <div className="grid grid-cols-[70px_1fr_120px_110px_160px_140px_100px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+        <div className="grid grid-cols-[70px_1fr_120px_110px_160px_140px_100px_48px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
           {table.getHeaderGroups()[0]?.headers.map((header) => (
             <button
               key={header.id}
@@ -145,7 +159,7 @@ export function WorkItemsPage() {
                   key={row.id}
                   type="button"
                   onClick={() => navigate(`/work-items/${row.original.id}`)}
-                  className="absolute left-0 grid w-full grid-cols-[70px_1fr_120px_110px_160px_140px_100px] border-b border-slate-100 px-3 text-left text-sm hover:bg-sky-50 dark:border-slate-800 dark:hover:bg-sky-950/40"
+                  className="absolute left-0 grid w-full grid-cols-[70px_1fr_120px_110px_160px_140px_100px_48px] border-b border-slate-100 px-3 text-left text-sm hover:bg-sky-50 dark:border-slate-800 dark:hover:bg-sky-950/40"
                   style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
                 >
                   {row.getVisibleCells().map((cell) => (

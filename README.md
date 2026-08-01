@@ -26,6 +26,7 @@
 - Быстрое создание (тип, Area, исполнитель, описание, скриншоты)
 - Карточка work item: описание, состояние, комментарии, вложения
 - Трей и глобальные горячие клавиши
+- Уведомления по доске (приложение / Mattermost / почта) и API Service Hooks
 - Светлая / тёмная тема
 - Работа **только после успешного подключения** к серверу
 
@@ -84,8 +85,35 @@ npm run dev
 
 - **Work Items** — Read & write
 - **Project and Team** — Read
+- **Service Hooks** (опционально) — Edit / View subscriptions, если управляете подписками из приложения
 
 Вставляйте **сырой** PAT или `_password` из `.npmrc` (это Base64 от сырого токена — приложение развернёт).
+
+### Уведомления
+
+Схема:
+
+```text
+Azure DevOps Server  --Service Hook POST-->  notifications-api  --WebSocket-->  Electron / фронты
+```
+
+У Azure DevOps **нет** клиентского WebSocket для доски. Мост — сервис [`notifications-api`](notifications-api/README.md):
+
+1. ADO шлёт HTTP Service Hook на `POST /hooks/azure`
+2. API публикует событие всем подписчикам `WS /ws`
+3. Desktop-клиент показывает toast и мигает иконкой на панели задач (окно из трея не разворачивается)
+
+Запуск API:
+
+```bash
+cd notifications-api
+npm install
+npm run dev
+```
+
+В **Настройках → Уведомления** укажите URL API. Service Hook в ADO (через UI или REST) должен указывать на `{apiUrl}/hooks/azure`.
+
+Дополнительно: провайдеры Mattermost / SMTP; локальный poll — fallback, если WebSocket недоступен.
 
 На on‑prem с IIS Basic Auth авторизация как у npm/Artifacts:
 
@@ -193,8 +221,9 @@ azure-fast-board/
 ├── .github/PULL_REQUEST_TEMPLATE.md
 ├── CONTRIBUTING.md        # ветки и PR
 ├── scripts/               # enable-branch-protection.sh
-├── frontend/              # само приложение
-│   ├── electron/main/     # трей, hotkeys, IPC, Azure REST, NTLM
+├── notifications-api/     # Service Hooks → WebSocket fan-out
+├── frontend/              # Electron-приложение
+│   ├── electron/main/     # трей, hotkeys, IPC, Azure REST, NTLM, WS-клиент
 │   ├── electron/preload/  # мост window.azureFastBoard
 │   ├── shared/            # типы и контракты IPC
 │   ├── src/features/      # UI: board, work items, connection, …

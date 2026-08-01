@@ -1,19 +1,23 @@
-import type {
-  AttachmentUpload,
-  BoardColumn,
-  ConnectionConfig,
-  ConnectionTestResult,
-  CreateWorkItemInput,
-  PatchWorkItemInput,
-  WorkItem,
-  WorkItemComment,
-  WorkItemDetail,
-  WorkItemTypeInfo,
-  AssigneeIdentity,
-  AreaPathsResult,
-  AreaPathOption,
-  IterationPathsResult,
-  IterationPathOption,
+import {
+  ADO_FIELD_DESCRIPTION,
+  ADO_FIELD_REPRO_STEPS,
+  type AttachmentUpload,
+  type BoardColumn,
+  type ConnectionConfig,
+  type ConnectionTestResult,
+  type CreateWorkItemInput,
+  type PatchWorkItemInput,
+  type ServiceHookCreateInput,
+  type ServiceHookSubscription,
+  type WorkItem,
+  type WorkItemComment,
+  type WorkItemDetail,
+  type WorkItemTypeInfo,
+  type AssigneeIdentity,
+  type AreaPathsResult,
+  type AreaPathOption,
+  type IterationPathsResult,
+  type IterationPathOption,
 } from '../../../shared/types'
 import { parseTags, normalizeIterationFieldPath } from '../../../shared/utils'
 import { AzureDevOpsError } from './errors'
@@ -131,7 +135,12 @@ export function mapWorkItem(raw: RawWorkItem): WorkItem {
       : undefined,
     changedDate: fields['System.ChangedDate'] ? String(fields['System.ChangedDate']) : undefined,
     createdDate: fields['System.CreatedDate'] ? String(fields['System.CreatedDate']) : undefined,
-    description: fields['System.Description'] ? String(fields['System.Description']) : undefined,
+    description: fields[ADO_FIELD_DESCRIPTION]
+      ? String(fields[ADO_FIELD_DESCRIPTION])
+      : undefined,
+    reproSteps: fields[ADO_FIELD_REPRO_STEPS]
+      ? String(fields[ADO_FIELD_REPRO_STEPS])
+      : undefined,
     url: raw.url,
   }
 }
@@ -725,9 +734,8 @@ export class AzureClient {
   }
 
   async getWorkItem(id: number): Promise<WorkItemDetail> {
-    const raw = await this.request<RawWorkItem>(
-      this.api(`/_apis/wit/workitems/${id}?$expand=all`),
-    )
+    const url = this.api(`/_apis/wit/workitems/${id}?$expand=all`)
+    const raw = await this.request<RawWorkItem>(url)
     const base = mapWorkItem(raw)
     const comments = await this.getComments(id)
     const attachments = (raw.relations ?? [])
@@ -945,9 +953,11 @@ export class AzureClient {
       }
 
       if (result.status < 200 || result.status >= 300) {
+        console.warn(`[azure] downloadMedia NTLM HTTP ${result.status}`, resolved)
         throw new AzureDevOpsError(`Failed to download media (HTTP ${result.status})`, result.status)
       }
 
+      console.log(`[azure] downloadMedia ok (NTLM) ${result.body.length}b`, resolved)
       return {
         mimeType: this.guessMimeType(resolved, result.contentType),
         dataBase64: result.body.toString('base64'),
@@ -968,6 +978,7 @@ export class AzureClient {
     }
 
     if (!response.ok) {
+      console.warn(`[azure] downloadMedia PAT HTTP ${response.status}`, resolved)
       throw new AzureDevOpsError(`Failed to download media (HTTP ${response.status})`, response.status)
     }
 
@@ -1497,6 +1508,144 @@ export class AzureClient {
         { name: 'Task', states: [{ name: 'To Do' }, { name: 'In Progress' }, { name: 'Done' }], fields: [] },
         { name: 'User Story', states: [{ name: 'New' }, { name: 'Active' }, { name: 'Resolved' }, { name: 'Closed' }], fields: [] },
       ]
+    }
+  }
+
+  private mapServiceHook(raw: Record<string, unknown>): ServiceHookSubscription {
+    return {
+      id: String(raw.id ?? ''),
+      url: raw.url ? String(raw.url) : undefined,
+      publisherId: String(raw.publisherId ?? ''),
+      eventType: String(raw.eventType ?? ''),
+      resourceVersion: raw.resourceVersion ? String(raw.resourceVersion) : undefined,
+      eventDescription: raw.eventDescription ? String(raw.eventDescription) : undefined,
+      consumerId: String(raw.consumerId ?? ''),
+      consumerActionId: String(raw.consumerActionId ?? ''),
+      actionDescription: raw.actionDescription ? String(raw.actionDescription) : undefined,
+      publisherInputs: (raw.publisherInputs as Record<string, string> | undefined) ?? undefined,
+      consumerInputs: (raw.consumerInputs as Record<string, string> | undefined) ?? undefined,
+      status: raw.status != null ? String(raw.status) : undefined,
+      createdDate: raw.createdDate ? String(raw.createdDate) : undefined,
+      modifiedDate: raw.modifiedDate ? String(raw.modifiedDate) : undefined,
+    }
+  }
+
+  async resolveProjectId(): Promise<string> {
+    if (!this.connection.project) {
+      throw new AzureDevOpsError('Project is required for service hooks', 400)
+    }
+    const projects = await this.listProjects()
+    const match = projects.find(
+      (project) => project.name.toLowerCase() === this.connection.project.toLowerCase(),
+    )
+    if (!match?.id) {
+      throw new AzureDevOpsError(`Project not found: ${this.connection.project}`, 404)
+    }
+    return match.id
+  }
+
+  /**
+   * Service Hooks REST API (collection scope).
+   * Azure DevOps has no public WebSocket/Web PubSub feed for board events —
+   * subscriptions deliver HTTP POSTs to a consumer URL.
+   * @see https://learn.microsoft.com/en-us/rest/api/azure/devops/hooks/subscriptions
+   */
+  async listServiceHooks(): Promise<ServiceHookSubscription[]> {
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    const payload = await this.request<{ value?: Array<Record<string, unknown>> }>(
+      this.collectionApi('/_apis/hooks/subscriptions', apiVersion),
+    )
+    const projectId = await this.resolveProjectId().catch(() => null)
+    const items = (payload.value ?? []).map((item) => this.mapServiceHook(item))
+    if (!projectId) return items
+    return items.filter((item) => {
+      const pid = item.publisherInputs?.projectId
+      return !pid || pid.toLowerCase() === projectId.toLowerCase()
+    })
+  }
+
+  async getServiceHook(id: string): Promise<ServiceHookSubscription> {
+    if (!id?.trim()) throw new AzureDevOpsError('Subscription id is required', 400)
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    const raw = await this.request<Record<string, unknown>>(
+      this.collectionApi(`/_apis/hooks/subscriptions/${encodeURIComponent(id)}`, apiVersion),
+    )
+    return this.mapServiceHook(raw)
+  }
+
+  async createServiceHook(input: ServiceHookCreateInput): Promise<ServiceHookSubscription> {
+    if (!input.webhookUrl?.trim()) {
+      throw new AzureDevOpsError('webhookUrl is required', 400)
+    }
+    if (!input.eventType?.trim()) {
+      throw new AzureDevOpsError('eventType is required', 400)
+    }
+
+    const projectId = await this.resolveProjectId()
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    const body = {
+      publisherId: 'tfs',
+      eventType: input.eventType,
+      resourceVersion: input.resourceVersion || '1.0',
+      consumerId: 'webHooks',
+      consumerActionId: 'httpRequest',
+      publisherInputs: {
+        projectId,
+        ...(input.publisherInputs ?? {}),
+      },
+      consumerInputs: {
+        url: input.webhookUrl.trim(),
+      },
+    }
+
+    const raw = await this.request<Record<string, unknown>>(
+      this.collectionApi('/_apis/hooks/subscriptions', apiVersion),
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    )
+    return this.mapServiceHook(raw)
+  }
+
+  async deleteServiceHook(id: string): Promise<void> {
+    if (!id?.trim()) throw new AzureDevOpsError('Subscription id is required', 400)
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    await this.request<void>(
+      this.collectionApi(`/_apis/hooks/subscriptions/${encodeURIComponent(id)}`, apiVersion),
+      { method: 'DELETE' },
+    )
+  }
+
+  /**
+   * Ask Azure DevOps to send a test notification for an existing subscription.
+   * Uses Notifications - Query / publisher test endpoints when available.
+   */
+  async testServiceHook(id: string): Promise<{ ok: boolean; message: string }> {
+    const subscription = await this.getServiceHook(id)
+    const apiVersion = this.connection.apiVersion || (await this.discoverApiVersion())
+    try {
+      await this.request<unknown>(this.collectionApi('/_apis/hooks/notifications', apiVersion), {
+        method: 'POST',
+        body: JSON.stringify({
+          subscriptionId: subscription.id,
+          details: {
+            publisherId: subscription.publisherId,
+            consumerId: subscription.consumerId,
+            consumerActionId: subscription.consumerActionId,
+            eventType: subscription.eventType,
+            publisherInputs: subscription.publisherInputs,
+            consumerInputs: subscription.consumerInputs,
+          },
+        }),
+      })
+      return { ok: true, message: 'Тестовое уведомление отправлено' }
+    } catch (error) {
+      // Fallback: re-create is not ideal; report the API error.
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Не удалось отправить тест',
+      }
     }
   }
 }

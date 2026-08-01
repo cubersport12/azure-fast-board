@@ -14,13 +14,19 @@ import { ThemeToggle } from '@/components/theme-toggle'
 import { useConnection, useCurrentUser } from '@/hooks/use-azure'
 import { useConnectionGate } from '@/hooks/use-connection-gate'
 import { useAppHotkeys } from '@/hooks/use-app-hotkeys'
+import { useNotificationsBridge } from '@/hooks/use-notifications-bridge'
 import { usePersistedFilters } from '@/hooks/use-persisted-filters'
 import { useTheme } from '@/hooks/use-theme'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui-store'
 import { CommandPalette } from '@/features/command-palette/command-palette'
 import { ConnectionDialog } from '@/features/connection/connection-dialog'
+import {
+  NotificationsBellButton,
+  NotificationsDrawer,
+} from '@/features/notifications/notifications-drawer'
 import { QuickCreateDialog } from '@/features/quick-create/quick-create-dialog'
+import { SendToMattermostDialog } from '@/features/mattermost/send-to-mattermost-dialog'
 import { SettingsDialog, ShortcutsDialog } from '@/features/settings/settings-dialogs'
 import { SprintNav } from '@/components/sprint-nav'
 
@@ -35,6 +41,7 @@ export function AppShell() {
   useAppHotkeys()
   useTheme()
   usePersistedFilters()
+  useNotificationsBridge()
   const { ready, checking, blocked, errorMessage } = useConnectionGate()
   const search = useUiStore((s) => s.search)
   const setSearch = useUiStore((s) => s.setSearch)
@@ -64,6 +71,9 @@ export function AppShell() {
             label="Рабочие элементы"
             disabled={!ready}
           />
+          <div className="my-1 border-t border-slate-100 pt-1 dark:border-slate-800">
+            <NotificationsBellButton disabled={!ready} />
+          </div>
           <SprintNav disabled={!ready} />
         </nav>
         <div className="space-y-1 border-t border-slate-100 p-2 dark:border-slate-800">
@@ -165,6 +175,8 @@ export function AppShell() {
       <ConnectionDialog />
       <SettingsDialog />
       <ShortcutsDialog />
+      <SendToMattermostDialog />
+      <NotificationsDrawer />
     </div>
   )
 }

@@ -13,6 +13,8 @@ interface UiState {
   connectionReady: boolean
   syncStatus: SyncStatus
   selectedIds: number[]
+  /** Work item id to share to Mattermost; null = dialog closed. */
+  mattermostShareWorkItemId: number | null
   setSearch: (value: string) => void
   setFilters: (filters: WorkItemFilters) => void
   setQuickCreateOpen: (open: boolean) => void
@@ -23,6 +25,7 @@ interface UiState {
   setConnectionReady: (ready: boolean) => void
   setSyncStatus: (status: SyncStatus) => void
   setSelectedIds: (ids: number[]) => void
+  setMattermostShareWorkItemId: (id: number | null) => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -36,6 +39,7 @@ export const useUiStore = create<UiState>((set) => ({
   connectionReady: false,
   syncStatus: { state: 'idle' },
   selectedIds: [],
+  mattermostShareWorkItemId: null,
   setSearch: (search) => set({ search }),
   setFilters: (filters) => set({ filters }),
   setQuickCreateOpen: (quickCreateOpen) => set({ quickCreateOpen }),
@@ -46,4 +50,5 @@ export const useUiStore = create<UiState>((set) => ({
   setConnectionReady: (connectionReady) => set({ connectionReady }),
   setSyncStatus: (syncStatus) => set({ syncStatus }),
   setSelectedIds: (selectedIds) => set({ selectedIds }),
+  setMattermostShareWorkItemId: (mattermostShareWorkItemId) => set({ mattermostShareWorkItemId }),
 }))

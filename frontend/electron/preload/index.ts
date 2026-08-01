@@ -3,10 +3,12 @@ import { IPC_CHANNELS, type AzureFastBoardApi } from '../../shared/ipc'
 import type {
   AppSettings,
   AttachmentUpload,
+  BoardNotification,
   ConnectionConfig,
   CreateWorkItemInput,
   PatchWorkItemInput,
   SavedView,
+  ServiceHookCreateInput,
 } from '../../shared/types'
 
 function subscribe<T>(channel: string, cb: (payload: T) => void) {
@@ -59,10 +61,39 @@ const api: AzureFastBoardApi = {
   setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke(IPC_CHANNELS.autoLaunchSet, enabled),
   readClipboardImage: () => ipcRenderer.invoke(IPC_CHANNELS.clipboardReadImage),
   openExternal: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url),
+  listServiceHooks: () => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksList),
+  getServiceHook: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksGet, id),
+  createServiceHook: (input: ServiceHookCreateInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.serviceHooksCreate, input),
+  deleteServiceHook: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksDelete, id),
+  testServiceHook: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksTest, id),
+  setNotificationSecrets: (secrets) =>
+    ipcRenderer.invoke(IPC_CHANNELS.notificationsSecretsSet, secrets),
+  connectMattermost: (input) => ipcRenderer.invoke(IPC_CHANNELS.mattermostConnect, input),
+  isMattermostConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.mattermostConfigured),
+  listMattermostTeams: () => ipcRenderer.invoke(IPC_CHANNELS.mattermostListTeams),
+  listMattermostChannels: (teamId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mattermostListChannels, teamId),
+  searchMattermostUsers: (term) => ipcRenderer.invoke(IPC_CHANNELS.mattermostSearchUsers, term),
+  getMattermostUsersByIds: (ids) => ipcRenderer.invoke(IPC_CHANNELS.mattermostUsersByIds, ids),
+  shareWorkItemToMattermost: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mattermostShareWorkItem, input),
+  getNotificationHistory: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsHistory),
+  markNotificationRead: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkRead, id),
+  markNotificationsReadByWorkItem: (workItemId: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkReadByWorkItem, workItemId),
+  markAllNotificationsRead: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkAllRead),
+  clearNotifications: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsClear),
+  testNotification: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsTest),
   onShowQuickCreate: (cb) => subscribe(IPC_CHANNELS.eventShowQuickCreate, cb),
   onShowCommandPalette: (cb) => subscribe(IPC_CHANNELS.eventShowCommandPalette, cb),
   onNavigate: (cb) => subscribe(IPC_CHANNELS.eventNavigate, cb),
   onSyncStatus: (cb) => subscribe(IPC_CHANNELS.eventSyncStatus, cb),
+  onNotification: (cb) => subscribe<BoardNotification>(IPC_CHANNELS.eventNotification, cb),
+  onWorkItemsInvalidate: (cb) =>
+    subscribe<{ reason: string }>(IPC_CHANNELS.eventWorkItemsInvalidate, cb),
+  debugLog: (message: string, data?: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.debugLog, message, data),
 }
 
 contextBridge.exposeInMainWorld('azureFastBoard', api)

@@ -51,6 +51,22 @@ describe('workItemColor', () => {
   })
 })
 
+describe('service hook mapping helpers', () => {
+  it('exposes create payload shape for webHooks consumer', () => {
+    const body = {
+      publisherId: 'tfs',
+      eventType: 'workitem.updated',
+      resourceVersion: '1.0',
+      consumerId: 'webHooks',
+      consumerActionId: 'httpRequest',
+      publisherInputs: { projectId: 'proj-guid' },
+      consumerInputs: { url: 'https://mattermost.example/hooks/xxx' },
+    }
+    expect(body.consumerId).toBe('webHooks')
+    expect(body.eventType).toBe('workitem.updated')
+  })
+})
+
 describe('mapWorkItem', () => {
   it('maps azure fields into ui model', () => {
     const item = mapWorkItem({
@@ -65,6 +81,8 @@ describe('mapWorkItem', () => {
         'System.AssignedTo': { displayName: 'Alex', uniqueName: 'alex@corp.local' },
         'System.CreatedBy': { displayName: 'Sam Author', uniqueName: 'sam@corp.local' },
         'System.Tags': 'ci; build',
+        'System.Description': '<p>Desc</p>',
+        'Microsoft.VSTS.TCM.ReproSteps': '<div>Тут описание</div><img src="https://x/a.png" />',
       },
     })
 
@@ -78,6 +96,8 @@ describe('mapWorkItem', () => {
       assignedTo: 'Alex',
       createdBy: 'Sam Author',
       tags: ['ci', 'build'],
+      description: '<p>Desc</p>',
+      reproSteps: '<div>Тут описание</div><img src="https://x/a.png" />',
     })
   })
 })

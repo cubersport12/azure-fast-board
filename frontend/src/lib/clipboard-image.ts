@@ -59,8 +59,17 @@ export function attachmentMarkdown(url: string, fileName: string) {
   return `![${fileName}](${url})`
 }
 
+/** Render comment body: native HTML from ADO / TipTap, or legacy plain+markdown images. */
 export function renderCommentHtml(text: string) {
-  const escaped = text
+  const raw = text ?? ''
+  if (!raw.trim()) return ''
+
+  // Rich HTML from Azure web UI or our TipTap editor.
+  if (/<[a-z][\s\S]*>/i.test(raw)) {
+    return raw
+  }
+
+  const escaped = raw
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

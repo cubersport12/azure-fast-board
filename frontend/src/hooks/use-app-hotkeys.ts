@@ -36,7 +36,13 @@ export function useAppHotkeys() {
         if (useUiStore.getState().connectionReady) setCommandPaletteOpen(true)
       }),
       api.onNavigate((route: string) => {
-        if (useUiStore.getState().connectionReady) navigate(route)
+        // Toast / tray deep-links must navigate even if gate briefly flipped.
+        if (!route) return
+        const [pathname, search = ''] = route.split('?')
+        navigate({
+          pathname,
+          search: search ? `?${search}` : '',
+        })
       }),
       api.onSyncStatus((status: SyncStatus) => {
         useUiStore.getState().setSyncStatus(status)

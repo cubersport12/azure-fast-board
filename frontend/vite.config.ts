@@ -11,6 +11,10 @@ const external = Object.keys(
   'dependencies' in pkg ? (pkg.dependencies as Record<string, string>) : {},
 )
 
+/** Dev proxy target for notifications-api (Azure Service Hooks → WebSocket fan-out). */
+const notificationsApiTarget =
+  process.env.NOTIFICATIONS_API_PROXY_TARGET?.trim() || 'http://172.22.91.47:8787'
+
 export default defineConfig(({ command }) => {
   rmSync('dist-electron', { recursive: true, force: true })
 
@@ -23,6 +27,17 @@ export default defineConfig(({ command }) => {
       alias: {
         '@': path.join(__dirname, 'src'),
         '@shared': path.join(__dirname, 'shared'),
+      },
+    },
+    server: {
+      proxy: {
+        // http://localhost:<vite>/notifications-api/... → http://172.22.91.47:8787/...
+        '/notifications-api': {
+          target: notificationsApiTarget,
+          changeOrigin: true,
+          ws: true,
+          rewrite: (requestPath) => requestPath.replace(/^\/notifications-api/, ''),
+        },
       },
     },
     plugins: [

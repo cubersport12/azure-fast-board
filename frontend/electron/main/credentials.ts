@@ -8,6 +8,10 @@ const LEGACY_PAT = 'pat.enc'
 interface StoredSecrets {
   pat?: string
   password?: string
+  mattermostWebhookUrl?: string
+  mattermostPassword?: string
+  smtpPassword?: string
+  notificationsApiToken?: string
 }
 
 function filePath() {
@@ -85,6 +89,50 @@ export function clearSecrets() {
   for (const target of [filePath(), legacyPatPath()]) {
     if (fs.existsSync(target)) fs.unlinkSync(target)
   }
+}
+
+export function saveMattermostWebhookUrl(url: string | null) {
+  const secrets = readSecrets()
+  if (url?.trim()) secrets.mattermostWebhookUrl = url.trim()
+  else delete secrets.mattermostWebhookUrl
+  writeSecrets(secrets)
+}
+
+export function loadMattermostWebhookUrl(): string | null {
+  return readSecrets().mattermostWebhookUrl || null
+}
+
+export function saveMattermostPassword(password: string | null) {
+  const secrets = readSecrets()
+  if (password) secrets.mattermostPassword = password
+  else delete secrets.mattermostPassword
+  writeSecrets(secrets)
+}
+
+export function loadMattermostPassword(): string | null {
+  return readSecrets().mattermostPassword || null
+}
+
+export function saveSmtpPassword(password: string | null) {
+  const secrets = readSecrets()
+  if (password) secrets.smtpPassword = password
+  else delete secrets.smtpPassword
+  writeSecrets(secrets)
+}
+
+export function loadSmtpPassword(): string | null {
+  return readSecrets().smtpPassword || null
+}
+
+export function saveNotificationsApiToken(token: string | null) {
+  const secrets = readSecrets()
+  if (token?.trim()) secrets.notificationsApiToken = token.trim()
+  else delete secrets.notificationsApiToken
+  writeSecrets(secrets)
+}
+
+export function loadNotificationsApiToken(): string | null {
+  return readSecrets().notificationsApiToken || null
 }
 
 /** @deprecated use clearSecrets */
