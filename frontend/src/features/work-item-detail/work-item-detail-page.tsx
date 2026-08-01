@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Save, Send } from 'lucide-react'
+import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthenticatedHtml } from '@/components/authenticated-media'
 import { RichTextEditor, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Button } from '@/components/ui/button'
 import { Badge, Input } from '@/components/ui/primitives'
-import { SearchableSelect } from '@/components/ui/searchable-select'
+import { Dropdown } from '@/components/ui/dropdown'
 import {
   queryKeys,
   useIterationPaths,
@@ -17,7 +18,6 @@ import {
 } from '@/hooks/use-azure'
 import { getAzureApi, requireAzureApi } from '@/lib/azure-api'
 import { renderCommentHtml } from '@/lib/clipboard-image'
-import { debugLog } from '@/lib/debug-log'
 import { descriptionImageUrls, mediaUrlsMatch } from '@/lib/html-text'
 import { notificationBelongsToWorkItem } from '@/lib/notification-route'
 import { cn, formatRelative, workItemColor } from '@/lib/utils'
@@ -105,13 +105,6 @@ export function WorkItemDetailPage() {
 
   useEffect(() => {
     if (!data || dirty) return
-    debugLog('[detail] seed fields from server', {
-      id: data.id,
-      type: data.type,
-      bodyField: bodyFieldForType(data.type),
-      chars: serverBodyHtml.length,
-      html: serverBodyHtml,
-    })
     setTitle(data.title)
     setBodyHtml(null)
     setIterationPath(data.iterationPath || '')
@@ -350,6 +343,7 @@ export function WorkItemDetailPage() {
           ))}
         </select>
         <span className="text-xs text-slate-500 dark:text-slate-400">#{data.id}</span>
+        <SendToMattermostButton workItemId={data.id} />
         {status && <span className="text-xs text-emerald-600 dark:text-emerald-400">{status}</span>}
       </div>
 
@@ -378,10 +372,6 @@ export function WorkItemDetailPage() {
                 value={displayBodyHtml}
                 onChange={(html) => {
                   if (htmlPlainText(html).length < htmlPlainText(serverBodyHtml).length) {
-                    debugLog('[detail] ignore onChange that drops text', {
-                      incoming: htmlPlainText(html),
-                      server: htmlPlainText(serverBodyHtml),
-                    })
                     return
                   }
                   setBodyHtml(html)
@@ -470,7 +460,9 @@ export function WorkItemDetailPage() {
               </div>
               <div className="space-y-1">
                 <div className="text-slate-500 dark:text-slate-400">Итерация</div>
-                <SearchableSelect
+                <Dropdown
+                  id="work-item-detail-iteration"
+                  favoritesKey="work-item-detail-iteration"
                   value={iterationPath}
                   options={iterationOptions}
                   onChange={(next) => {

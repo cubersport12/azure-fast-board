@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { WorkItem } from '../../../shared/types'
 import { Badge } from '@/components/ui/primitives'
+import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
 import { cn, formatRelative, workItemColor } from '@/lib/utils'
 
 export const WorkItemCard = memo(function WorkItemCard({
@@ -79,6 +80,13 @@ export const WorkItemCard = memo(function WorkItemCard({
           <span className="shrink-0 text-[11px] text-slate-400">{formatRelative(item.changedDate)}</span>
         </div>
       </button>
+      <div
+        className="mt-2 flex justify-end"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <SendToMattermostButton workItemId={item.id} compact />
+      </div>
     </div>
   )
 })

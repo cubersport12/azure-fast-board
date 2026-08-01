@@ -9,6 +9,7 @@ interface StoredSecrets {
   pat?: string
   password?: string
   mattermostWebhookUrl?: string
+  mattermostPassword?: string
   smtpPassword?: string
   notificationsApiToken?: string
 }
@@ -99,6 +100,17 @@ export function saveMattermostWebhookUrl(url: string | null) {
 
 export function loadMattermostWebhookUrl(): string | null {
   return readSecrets().mattermostWebhookUrl || null
+}
+
+export function saveMattermostPassword(password: string | null) {
+  const secrets = readSecrets()
+  if (password) secrets.mattermostPassword = password
+  else delete secrets.mattermostPassword
+  writeSecrets(secrets)
+}
+
+export function loadMattermostPassword(): string | null {
+  return readSecrets().mattermostPassword || null
 }
 
 export function saveSmtpPassword(password: string | null) {

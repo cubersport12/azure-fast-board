@@ -26,6 +26,7 @@ import {
   NotificationsDrawer,
 } from '@/features/notifications/notifications-drawer'
 import { QuickCreateDialog } from '@/features/quick-create/quick-create-dialog'
+import { SendToMattermostDialog } from '@/features/mattermost/send-to-mattermost-dialog'
 import { SettingsDialog, ShortcutsDialog } from '@/features/settings/settings-dialogs'
 import { SprintNav } from '@/components/sprint-nav'
 
@@ -174,6 +175,7 @@ export function AppShell() {
       <ConnectionDialog />
       <SettingsDialog />
       <ShortcutsDialog />
+      <SendToMattermostDialog />
       <NotificationsDrawer />
     </div>
   )

@@ -1,20 +1,16 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, Input, Label } from '@/components/ui/primitives'
 import { queryKeys, useSettings } from '@/hooks/use-azure'
 import { useUiStore } from '@/stores/ui-store'
-import type {
-  AppSettings,
-  NotificationEventType,
-  ServiceHookSubscription,
-} from '../../../shared/types'
+import type { AppSettings, NotificationEventType } from '../../../shared/types'
 
 const EVENT_LABELS: Array<{ id: NotificationEventType; label: string }> = [
   { id: 'workitem.created', label: 'Создание work item' },
   { id: 'workitem.updated', label: 'Обновление work item' },
   { id: 'workitem.assigned', label: 'Назначение на меня / смена исполнителя' },
-  { id: 'workitem.commented', label: 'Комментарии (через Service Hooks)' },
+  { id: 'workitem.commented', label: 'Комментарии' },
   { id: 'workitem.deleted', label: 'Удаление work item' },
 ]
 
@@ -25,21 +21,11 @@ export function SettingsDialog() {
   const qc = useQueryClient()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [autoLaunch, setAutoLaunch] = useState(false)
-  const [mattermostUrl, setMattermostUrl] = useState('')
-  const [smtpPassword, setSmtpPassword] = useState('')
+  const [mattermostPassword, setMattermostPassword] = useState('')
   const [apiToken, setApiToken] = useState('')
-  const [hookEvent, setHookEvent] = useState<NotificationEventType>('workitem.updated')
-  const [hookUrl, setHookUrl] = useState('')
-  const [hooksBusy, setHooksBusy] = useState(false)
-  const [hooksMessage, setHooksMessage] = useState('')
   const [testMessage, setTestMessage] = useState('')
-
-  const hooksQuery = useQuery({
-    queryKey: ['serviceHooks'],
-    queryFn: () => window.azureFastBoard!.listServiceHooks(),
-    enabled: open && Boolean(window.azureFastBoard),
-    retry: false,
-  })
+  const [mattermostMessage, setMattermostMessage] = useState('')
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (data) setSettings(data)
@@ -48,19 +34,12 @@ export function SettingsDialog() {
   useEffect(() => {
     if (!open) return
     void window.azureFastBoard.getAutoLaunch().then(setAutoLaunch)
-    setMattermostUrl('')
-    setSmtpPassword('')
+    setMattermostPassword('')
     setApiToken('')
-    setHooksMessage('')
     setTestMessage('')
+    setMattermostMessage('')
+    setSaving(false)
   }, [open])
-
-  useEffect(() => {
-    if (!settings?.notifications.apiUrl) return
-    if (hookUrl.trim()) return
-    const base = settings.notifications.apiUrl.replace(/\/$/, '')
-    setHookUrl(`${base}/hooks/azure`)
-  }, [settings?.notifications.apiUrl, hookUrl])
 
   if (!settings) return null
 
@@ -79,7 +58,7 @@ export function SettingsDialog() {
             ...notifications.providers.mattermost,
             ...(patch.providers?.mattermost ?? {}),
           },
-          email: { ...notifications.providers.email, ...(patch.providers?.email ?? {}) },
+          email: notifications.providers.email,
         },
       },
     })
@@ -156,13 +135,7 @@ export function SettingsDialog() {
         </section>
 
         <section className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-700">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Уведомления</h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Azure DevOps шлёт Service Hooks (HTTP) на Node API (`notifications-api`), а API раздаёт
-              события по WebSocket клиентам. Без API можно использовать локальный опрос как fallback.
-            </p>
-          </div>
+          <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Уведомления</h3>
 
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -180,45 +153,6 @@ export function SettingsDialog() {
             />
             Только мои work item / назначения мне
           </label>
-
-          <div className="space-y-1">
-            <Label htmlFor="notifications-max-cached">Макс. уведомлений в кэше</Label>
-            <Input
-              id="notifications-max-cached"
-              type="number"
-              min={1}
-              max={1000}
-              value={notifications.maxCached ?? 100}
-              onChange={(e) => {
-                const value = Number(e.target.value)
-                patchNotifications({
-                  maxCached: Number.isFinite(value) ? Math.min(1000, Math.max(1, Math.floor(value))) : 100,
-                })
-              }}
-            />
-            <p className="text-xs text-slate-500">
-              История хранится локально на этом компьютере (по умолчанию 100).
-            </p>
-          </div>
-
-          <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-            <Label>Notifications API (WebSocket)</Label>
-            <Input
-              placeholder="http://172.22.91.47:8787"
-              value={notifications.apiUrl}
-              onChange={(e) => patchNotifications({ apiUrl: e.target.value })}
-            />
-            <Input
-              type="password"
-              placeholder="AUTH_TOKEN API (если задан на сервере)"
-              value={apiToken}
-              onChange={(e) => setApiToken(e.target.value)}
-            />
-            <p className="text-xs text-slate-500">
-              Electron подписывается на <code>/ws</code>. Service Hook в ADO должен указывать на{' '}
-              <code>{'{apiUrl}/hooks/azure'}</code>.
-            </p>
-          </div>
 
           <div className="space-y-1">
             <Label>События</Label>
@@ -241,7 +175,7 @@ export function SettingsDialog() {
           </div>
 
           <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-            <Label>Провайдер: приложение</Label>
+            <Label>В приложении</Label>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -255,7 +189,7 @@ export function SettingsDialog() {
                   })
                 }
               />
-              Включён
+              Включены
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -285,12 +219,12 @@ export function SettingsDialog() {
                   })
                 }
               />
-              Мигать иконкой на панели задач (без разворачивания окна)
+              Мигать иконкой на панели задач
             </label>
           </div>
 
           <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-            <Label>Провайдер: Mattermost</Label>
+            <Label>Mattermost</Label>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -307,119 +241,113 @@ export function SettingsDialog() {
                   })
                 }
               />
-              Включён
-              {notifications.providers.mattermost.webhookUrlConfigured ? (
-                <span className="text-xs text-emerald-600">webhook задан</span>
+              Уведомления в MM
+              {notifications.providers.mattermost.passwordConfigured ? (
+                <span className="text-xs text-emerald-600">пароль задан</span>
               ) : (
-                <span className="text-xs text-slate-500">webhook не задан</span>
+                <span className="text-xs text-slate-500">пароль не задан</span>
               )}
             </label>
-            <Input
-              type="password"
-              placeholder="Incoming Webhook URL"
-              value={mattermostUrl}
-              onChange={(e) => setMattermostUrl(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
-            <Label>Провайдер: почта (SMTP)</Label>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={notifications.providers.email.enabled}
+                checked={notifications.providers.mattermost.notifyOnCreate}
+                disabled={
+                  !notifications.providers.mattermost.baseUrl.trim() ||
+                  !notifications.providers.mattermost.loginId.trim() ||
+                  !notifications.providers.mattermost.passwordConfigured
+                }
                 onChange={(e) =>
                   patchNotifications({
                     providers: {
                       ...notifications.providers,
-                      email: { ...notifications.providers.email, enabled: e.target.checked },
+                      mattermost: {
+                        ...notifications.providers.mattermost,
+                        notifyOnCreate: e.target.checked,
+                      },
                     },
                   })
                 }
               />
-              Включён
-              {notifications.providers.email.passwordConfigured ? (
-                <span className="text-xs text-emerald-600">пароль задан</span>
-              ) : null}
+              Уведомлять в MM при создании карточки
             </label>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Если включено и MM настроен — после создания карточки себе в MM уйдёт сообщение с
+              названием, описанием, картинками и ссылкой на TFS.
+            </p>
             <Input
-              placeholder="Кому"
-              value={notifications.providers.email.to}
+              placeholder="URL сервера Mattermost (https://mm.example.com)"
+              value={notifications.providers.mattermost.baseUrl}
               onChange={(e) =>
                 patchNotifications({
                   providers: {
                     ...notifications.providers,
-                    email: { ...notifications.providers.email, to: e.target.value },
+                    mattermost: {
+                      ...notifications.providers.mattermost,
+                      baseUrl: e.target.value,
+                    },
                   },
                 })
               }
             />
             <div className="grid grid-cols-2 gap-2">
               <Input
-                placeholder="SMTP host"
-                value={notifications.providers.email.smtpHost}
+                placeholder="Логин (email / username)"
+                value={notifications.providers.mattermost.loginId}
+                autoComplete="username"
                 onChange={(e) =>
                   patchNotifications({
                     providers: {
                       ...notifications.providers,
-                      email: { ...notifications.providers.email, smtpHost: e.target.value },
+                      mattermost: {
+                        ...notifications.providers.mattermost,
+                        loginId: e.target.value,
+                      },
                     },
                   })
                 }
               />
               <Input
-                type="number"
-                placeholder="Port"
-                value={notifications.providers.email.smtpPort}
-                onChange={(e) =>
-                  patchNotifications({
-                    providers: {
-                      ...notifications.providers,
-                      email: {
-                        ...notifications.providers.email,
-                        smtpPort: Number(e.target.value) || 587,
-                      },
-                    },
-                  })
+                type="password"
+                placeholder={
+                  notifications.providers.mattermost.passwordConfigured
+                    ? 'Пароль (оставьте пустым, чтобы не менять)'
+                    : 'Пароль'
                 }
+                value={mattermostPassword}
+                autoComplete="current-password"
+                onChange={(e) => setMattermostPassword(e.target.value)}
               />
             </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Пароль хранится зашифрованно. После сохранения — вход и тестовое сообщение себе.
+            </p>
+            {mattermostMessage ? (
+              <p
+                className={
+                  mattermostMessage.startsWith('Mattermost: вход')
+                    ? 'text-xs text-emerald-600'
+                    : 'text-xs text-rose-600'
+                }
+              >
+                {mattermostMessage}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2 rounded-md border border-slate-200 p-3 dark:border-slate-700">
+            <Label>Notifications API (опционально)</Label>
             <Input
-              placeholder="SMTP user"
-              value={notifications.providers.email.smtpUser}
-              onChange={(e) =>
-                patchNotifications({
-                  providers: {
-                    ...notifications.providers,
-                    email: { ...notifications.providers.email, smtpUser: e.target.value },
-                  },
-                })
-              }
+              placeholder="http://172.22.91.47:8787"
+              value={notifications.apiUrl}
+              onChange={(e) => patchNotifications({ apiUrl: e.target.value })}
             />
             <Input
               type="password"
-              placeholder="SMTP password"
-              value={smtpPassword}
-              onChange={(e) => setSmtpPassword(e.target.value)}
+              placeholder="AUTH_TOKEN API (если задан на сервере)"
+              value={apiToken}
+              onChange={(e) => setApiToken(e.target.value)}
             />
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={notifications.providers.email.smtpSecure}
-                onChange={(e) =>
-                  patchNotifications({
-                    providers: {
-                      ...notifications.providers,
-                      email: {
-                        ...notifications.providers.email,
-                        smtpSecure: e.target.checked,
-                      },
-                    },
-                  })
-                }
-              />
-              TLS сразу (порт 465)
-            </label>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -442,139 +370,52 @@ export function SettingsDialog() {
             ) : null}
           </div>
         </section>
-
-        <section className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-700">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-              Service Hooks (Azure DevOps)
-            </h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Управление подписками на сервере. Webhook должен быть доступен с Azure DevOps Server
-              (например Incoming Webhook Mattermost).
-            </p>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            <select
-              className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              value={hookEvent}
-              onChange={(e) => setHookEvent(e.target.value as NotificationEventType)}
-            >
-              {EVENT_LABELS.filter((e) => e.id !== 'workitem.assigned').map((event) => (
-                <option key={event.id} value={event.id}>
-                  {event.label}
-                </option>
-              ))}
-            </select>
-            <Input
-              placeholder="Webhook URL"
-              value={hookUrl}
-              onChange={(e) => setHookUrl(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              disabled={hooksBusy || !hookUrl.trim()}
-              onClick={async () => {
-                setHooksBusy(true)
-                setHooksMessage('')
-                try {
-                  await window.azureFastBoard.createServiceHook({
-                    eventType: hookEvent,
-                    webhookUrl: hookUrl.trim(),
-                  })
-                  setHookUrl('')
-                  setHooksMessage('Подписка создана')
-                  await qc.invalidateQueries({ queryKey: ['serviceHooks'] })
-                } catch (error) {
-                  setHooksMessage(error instanceof Error ? error.message : 'Ошибка создания')
-                } finally {
-                  setHooksBusy(false)
-                }
-              }}
-            >
-              Создать подписку
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={hooksBusy}
-              onClick={async () => {
-                await qc.invalidateQueries({ queryKey: ['serviceHooks'] })
-              }}
-            >
-              Обновить список
-            </Button>
-          </div>
-          {hooksMessage ? <p className="text-xs text-slate-500">{hooksMessage}</p> : null}
-          {hooksQuery.isError ? (
-            <p className="text-xs text-rose-600">
-              {(hooksQuery.error as Error)?.message || 'Не удалось загрузить service hooks'}
-            </p>
-          ) : null}
-          <div className="space-y-2">
-            {(hooksQuery.data ?? []).map((hook: ServiceHookSubscription) => (
-              <div
-                key={hook.id}
-                className="flex items-start justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800"
-              >
-                <div className="min-w-0">
-                  <div className="font-medium">{hook.eventType}</div>
-                  <div className="truncate text-xs text-slate-500">
-                    {hook.consumerInputs?.url || hook.actionDescription || hook.id}
-                  </div>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-8 px-2 text-xs"
-                    onClick={async () => {
-                      const result = await window.azureFastBoard.testServiceHook(hook.id)
-                      setHooksMessage(result.message)
-                    }}
-                  >
-                    Тест
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-8 px-2 text-xs"
-                    onClick={async () => {
-                      await window.azureFastBoard.deleteServiceHook(hook.id)
-                      await qc.invalidateQueries({ queryKey: ['serviceHooks'] })
-                    }}
-                  >
-                    Удалить
-                  </Button>
-                </div>
-              </div>
-            ))}
-            {!hooksQuery.isLoading && (hooksQuery.data?.length ?? 0) === 0 ? (
-              <p className="text-xs text-slate-500">Подписок пока нет</p>
-            ) : null}
-          </div>
-        </section>
       </div>
 
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex justify-end gap-2">
         <Button
+          disabled={saving}
           onClick={async () => {
-            await window.azureFastBoard.updateSettings(settings)
-            await window.azureFastBoard.setAutoLaunch(autoLaunch)
-            if (mattermostUrl.trim() || smtpPassword || apiToken.trim()) {
-              await window.azureFastBoard.setNotificationSecrets({
-                mattermostWebhookUrl: mattermostUrl.trim() || undefined,
-                smtpPassword: smtpPassword || undefined,
-                notificationsApiToken: apiToken.trim() || undefined,
-              })
+            setSaving(true)
+            setMattermostMessage('')
+            try {
+              await window.azureFastBoard.updateSettings(settings)
+              await window.azureFastBoard.setAutoLaunch(autoLaunch)
+              if (mattermostPassword || apiToken.trim()) {
+                await window.azureFastBoard.setNotificationSecrets({
+                  mattermostPassword: mattermostPassword || undefined,
+                  notificationsApiToken: apiToken.trim() || undefined,
+                })
+              }
+
+              const mm = settings.notifications.providers.mattermost
+              const hasMmLogin =
+                Boolean(mm.baseUrl.trim()) &&
+                Boolean(mm.loginId.trim()) &&
+                (Boolean(mattermostPassword) || mm.passwordConfigured)
+              if (hasMmLogin) {
+                const result = await window.azureFastBoard.connectMattermost({
+                  baseUrl: mm.baseUrl.trim(),
+                  loginId: mm.loginId.trim(),
+                  password: mattermostPassword || undefined,
+                })
+                setMattermostMessage(result.message)
+                await qc.invalidateQueries({ queryKey: queryKeys.settings })
+                if (!result.ok) return
+              } else {
+                await qc.invalidateQueries({ queryKey: queryKeys.settings })
+              }
+              setOpen(false)
+            } catch (error) {
+              setMattermostMessage(
+                error instanceof Error ? error.message : 'Не удалось сохранить настройки Mattermost',
+              )
+            } finally {
+              setSaving(false)
             }
-            await qc.invalidateQueries({ queryKey: queryKeys.settings })
-            setOpen(false)
           }}
         >
-          Сохранить
+          {saving ? 'Сохранение…' : 'Сохранить'}
         </Button>
       </div>
     </Dialog>

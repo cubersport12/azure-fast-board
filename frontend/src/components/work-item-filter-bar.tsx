@@ -2,6 +2,7 @@ import { Check, ChevronDown, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkItem } from '../../shared/types'
 import { Button } from '@/components/ui/button'
+import { Dropdown } from '@/components/ui/dropdown'
 import {
   COMPLETED_STATES,
   DEFAULT_FILTERS,
@@ -15,118 +16,6 @@ import {
   type WorkItemFilters,
 } from '@/lib/work-item-filters'
 import { cn } from '@/lib/utils'
-
-function MultiSelectDropdown({
-  label,
-  options,
-  value,
-  onChange,
-  placeholder = 'Все',
-}: {
-  label: string
-  options: string[]
-  value: string[]
-  onChange: (next: string[]) => void
-  placeholder?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open])
-
-  const summary =
-    value.length === 0
-      ? placeholder
-      : value.length === 1
-        ? formatOptionLabel(value[0])
-        : `${value.length} выбрано`
-
-  const toggle = (option: string) => {
-    onChange(value.includes(option) ? value.filter((entry) => entry !== option) : [...value, option])
-  }
-
-  return (
-    <div className="min-w-[160px] flex-1" ref={rootRef}>
-      <div className="mb-1 text-xs font-medium text-slate-500">{label}</div>
-      <div className="relative">
-        <button
-          type="button"
-          className={cn(
-            'flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-white px-3 text-left text-sm dark:bg-slate-950',
-            value.length
-              ? 'border-sky-300 text-slate-900 dark:border-sky-700 dark:text-slate-100'
-              : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300',
-          )}
-          onClick={() => setOpen((current) => !current)}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-        >
-          <span className="truncate">{summary}</span>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-400 transition', open && 'rotate-180')} />
-        </button>
-
-        {open && (
-          <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
-              onClick={() => onChange([])}
-            >
-              {placeholder}
-              {value.length === 0 && <Check className="h-3.5 w-3.5 text-sky-600" />}
-            </button>
-            <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-            {options.length === 0 && (
-              <div className="px-3 py-2 text-sm text-slate-400">Нет вариантов</div>
-            )}
-            {options.map((option) => {
-              const checked = value.includes(option)
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  role="option"
-                  aria-selected={checked}
-                  className={cn(
-                    'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800',
-                    checked && 'bg-sky-50 text-sky-900 dark:bg-sky-950 dark:text-sky-200',
-                  )}
-                  onClick={() => toggle(option)}
-                >
-                  <span
-                    className={cn(
-                      'flex h-4 w-4 items-center justify-center rounded border',
-                      checked
-                        ? 'border-sky-600 bg-sky-600 text-white'
-                        : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-950',
-                    )}
-                  >
-                    {checked && <Check className="h-3 w-3" />}
-                  </span>
-                  <span className="truncate">{formatOptionLabel(option)}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 function FilterPresetDropdown({
   filters,
@@ -244,6 +133,9 @@ export function WorkItemFilterBar({
 
   const active = hasActiveFilters(normalizedFilters)
 
+  const toOptions = (list: string[]) =>
+    list.map((value) => ({ value, label: formatOptionLabel(value) }))
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -262,40 +154,60 @@ export function WorkItemFilterBar({
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <MultiSelectDropdown
+        <Dropdown
+          multiple
           label="Тип"
-          options={options.types}
+          favoritesKey="filter-types"
+          options={toOptions(options.types)}
           value={normalizedFilters.types}
           onChange={(types) => onChange({ ...normalizedFilters, types })}
           placeholder="Все"
+          emptyLabel="Все"
+          searchPlaceholder="Поиск типа…"
         />
-        <MultiSelectDropdown
+        <Dropdown
+          multiple
           label="Состояние"
-          options={options.states}
+          favoritesKey="filter-states"
+          options={toOptions(options.states)}
           value={normalizedFilters.states}
           onChange={(states) => onChange({ ...normalizedFilters, states })}
           placeholder="Все"
+          emptyLabel="Все"
+          searchPlaceholder="Поиск состояния…"
         />
-        <MultiSelectDropdown
+        <Dropdown
+          multiple
           label="Исполнитель"
-          options={options.assignees}
+          favoritesKey="filter-assignees"
+          options={toOptions(options.assignees)}
           value={normalizedFilters.assignees}
           onChange={(assignees) => onChange({ ...normalizedFilters, assignees })}
           placeholder="Все"
+          emptyLabel="Все"
+          searchPlaceholder="Поиск исполнителя…"
         />
-        <MultiSelectDropdown
+        <Dropdown
+          multiple
           label="Автор"
-          options={options.creators}
+          favoritesKey="filter-creators"
+          options={toOptions(options.creators)}
           value={normalizedFilters.creators}
           onChange={(creators) => onChange({ ...normalizedFilters, creators })}
           placeholder="Все"
+          emptyLabel="Все"
+          searchPlaceholder="Поиск автора…"
         />
-        <MultiSelectDropdown
+        <Dropdown
+          multiple
           label="Теги"
-          options={options.tags}
+          favoritesKey="filter-tags"
+          options={toOptions(options.tags)}
           value={normalizedFilters.tags}
           onChange={(tags) => onChange({ ...normalizedFilters, tags })}
           placeholder="Все"
+          emptyLabel="Все"
+          searchPlaceholder="Поиск тэга…"
         />
       </div>
     </div>

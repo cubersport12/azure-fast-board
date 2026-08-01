@@ -1,7 +1,7 @@
 import { Plus, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { SearchableSelect } from '@/components/ui/searchable-select'
+import { Dropdown } from '@/components/ui/dropdown'
 import { Dialog } from '@/components/ui/primitives'
 import {
   useIterationPaths,
@@ -162,7 +162,9 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Подписка хранится только локально и не меняет настройки команды в TFS.
           </p>
-          <SearchableSelect
+          <Dropdown
+            id="sprint-nav-add"
+            favoritesKey="sprint-nav-add"
             value={picked}
             options={availableOptions}
             onChange={setPicked}

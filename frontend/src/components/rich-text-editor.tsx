@@ -14,6 +14,12 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { extractHtmlImageSrcs, isRemoteMediaUrl } from '@/lib/authenticated-media'
+
+/** Already displayable in Chromium — no NTLM fetch needed (create-flow blob uploads). */
+function isLocalDisplayUrl(url: string) {
+  const trimmed = (url || '').trim()
+  return trimmed.startsWith('blob:') || trimmed.startsWith('data:')
+}
 import { extractImageFromClipboardEvent, fileToAttachment } from '@/lib/clipboard-image'
 import { debugLog } from '@/lib/debug-log'
 import { normalizeAdoHtmlForEditor } from '@/lib/normalize-ado-html'
@@ -96,6 +102,8 @@ export interface RichTextEditorProps {
   placeholder?: string
   editable?: boolean
   minHeight?: number
+  /** Caps editor body height; content scrolls inside. */
+  maxHeight?: number
   className?: string
   'data-composer'?: string
 }
@@ -107,6 +115,7 @@ export function RichTextEditor({
   placeholder = 'Введите текст…',
   editable = true,
   minHeight = 120,
+  maxHeight,
   className,
   'data-composer': dataComposer = 'editor',
 }: RichTextEditorProps) {
@@ -180,8 +189,12 @@ export function RichTextEditor({
           'tiptap max-w-none px-3 py-2 text-sm text-slate-800 outline-none dark:text-slate-100',
           '[&_img]:mx-1 [&_img]:inline [&_img]:max-h-80 [&_img]:max-w-full [&_img]:align-middle [&_img]:rounded-lg [&_img]:border',
           '[&_p]:my-1 [&_strong]:font-bold [&_b]:font-bold',
+          maxHeight != null && 'overflow-y-auto',
         ),
-        style: `min-height:${minHeight}px`,
+        style:
+          maxHeight != null
+            ? `min-height:${minHeight}px;max-height:${maxHeight}px`
+            : `min-height:${minHeight}px`,
       },
       handlePaste: (_view, event) => {
         const items = event.clipboardData?.items
@@ -203,16 +216,19 @@ export function RichTextEditor({
           if (!image || !current) return
           setUploading(true)
           try {
-            const adoUrl = await uploadRef.current(image)
-            const api = getAzureApi()
-            let displaySrc = adoUrl
-            if (api?.fetchMedia) {
-              const media = await api.fetchMedia(adoUrl)
-              const binary = Uint8Array.from(atob(media.dataBase64), (c) => c.charCodeAt(0))
-              const blob = new Blob([binary], { type: media.mimeType || 'image/png' })
-              displaySrc = URL.createObjectURL(blob)
-              blobUrlsRef.current.push(displaySrc)
-              blobToOriginalRef.current.set(displaySrc, adoUrl)
+            const uploadedUrl = await uploadRef.current(image)
+            let displaySrc = uploadedUrl
+            // Quick-create returns blob: already; only NTLM-fetch remote ADO attachment URLs.
+            if (!isLocalDisplayUrl(uploadedUrl)) {
+              const api = getAzureApi()
+              if (api?.fetchMedia) {
+                const media = await api.fetchMedia(uploadedUrl)
+                const binary = Uint8Array.from(atob(media.dataBase64), (c) => c.charCodeAt(0))
+                const blob = new Blob([binary], { type: media.mimeType || 'image/png' })
+                displaySrc = URL.createObjectURL(blob)
+                blobUrlsRef.current.push(displaySrc)
+                blobToOriginalRef.current.set(displaySrc, uploadedUrl)
+              }
             }
             current.chain().focus().setImage({ src: displaySrc, alt: image.fileName }).run()
           } finally {
@@ -378,16 +394,18 @@ export function RichTextEditor({
     if (!editor) return
     setUploading(true)
     try {
-      const adoUrl = await onUploadImage(file)
-      const api = getAzureApi()
-      let displaySrc = adoUrl
-      if (api?.fetchMedia) {
-        const media = await api.fetchMedia(adoUrl)
-        const binary = Uint8Array.from(atob(media.dataBase64), (c) => c.charCodeAt(0))
-        const blob = new Blob([binary], { type: media.mimeType || 'image/png' })
-        displaySrc = URL.createObjectURL(blob)
-        blobUrlsRef.current.push(displaySrc)
-        blobToOriginalRef.current.set(displaySrc, adoUrl)
+      const uploadedUrl = await onUploadImage(file)
+      let displaySrc = uploadedUrl
+      if (!isLocalDisplayUrl(uploadedUrl)) {
+        const api = getAzureApi()
+        if (api?.fetchMedia) {
+          const media = await api.fetchMedia(uploadedUrl)
+          const binary = Uint8Array.from(atob(media.dataBase64), (c) => c.charCodeAt(0))
+          const blob = new Blob([binary], { type: media.mimeType || 'image/png' })
+          displaySrc = URL.createObjectURL(blob)
+          blobUrlsRef.current.push(displaySrc)
+          blobToOriginalRef.current.set(displaySrc, uploadedUrl)
+        }
       }
       editor.chain().focus().setImage({ src: displaySrc, alt: file.fileName }).run()
     } finally {

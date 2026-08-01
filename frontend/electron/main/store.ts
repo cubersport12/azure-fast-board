@@ -7,10 +7,15 @@ import {
   type ConnectionConfig,
   type NotificationSettings,
   type SavedView,
+  type SelectFavoriteOption,
   type WorkItem,
 } from '../../shared/types'
 import { normalizeIterationFieldPath } from '../../shared/utils'
-import { loadMattermostWebhookUrl, loadSmtpPassword } from './credentials'
+import {
+  loadMattermostPassword,
+  loadMattermostWebhookUrl,
+  loadSmtpPassword,
+} from './credentials'
 
 interface StoreSchema {
   settings: AppSettings
@@ -44,7 +49,13 @@ function mergeNotificationSettings(
     mattermost: {
       ...base.providers.mattermost,
       ...(raw?.providers?.mattermost ?? {}),
+      baseUrl: (raw?.providers?.mattermost?.baseUrl ?? base.providers.mattermost.baseUrl).trim(),
+      loginId: (raw?.providers?.mattermost?.loginId ?? base.providers.mattermost.loginId).trim(),
+      notifyOnCreate: Boolean(
+        raw?.providers?.mattermost?.notifyOnCreate ?? base.providers.mattermost.notifyOnCreate,
+      ),
       webhookUrlConfigured: Boolean(loadMattermostWebhookUrl()),
+      passwordConfigured: Boolean(loadMattermostPassword()),
     },
     email: {
       ...base.providers.email,
@@ -64,6 +75,35 @@ function mergeNotificationSettings(
     events,
     providers,
   }
+}
+
+/** Accepts legacy `string[]` favorites and normalizes to labeled options. */
+function normalizeSelectFavorites(
+  raw: Record<string, unknown> | undefined,
+): Record<string, SelectFavoriteOption[]> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, SelectFavoriteOption[]> = {}
+  for (const [key, list] of Object.entries(raw)) {
+    if (!Array.isArray(list)) continue
+    const next: SelectFavoriteOption[] = []
+    for (const entry of list) {
+      if (typeof entry === 'string') {
+        const value = entry.trim()
+        if (value) next.push({ value, label: value })
+        continue
+      }
+      if (!entry || typeof entry !== 'object') continue
+      const value = String((entry as SelectFavoriteOption).value || '').trim()
+      if (!value) continue
+      const label = String((entry as SelectFavoriteOption).label || value).trim() || value
+      const description = (entry as SelectFavoriteOption).description
+        ? String((entry as SelectFavoriteOption).description)
+        : undefined
+      next.push(description ? { value, label, description } : { value, label })
+    }
+    out[key] = next
+  }
+  return out
 }
 
 export function getSettings() {
@@ -87,6 +127,9 @@ export function getSettings() {
       creators: settings.filters?.creators ?? [],
       tags: settings.filters?.tags ?? [],
     },
+    selectFavorites: normalizeSelectFavorites(
+      settings.selectFavorites as Record<string, unknown> | undefined,
+    ),
     notifications: mergeNotificationSettings(settings.notifications),
   }
 }
@@ -108,6 +151,12 @@ export function updateSettings(patch: Partial<AppSettings>) {
   }
   if (patch.selectedIterationPath !== undefined) {
     next.selectedIterationPath = normalizeIterationFieldPath(patch.selectedIterationPath)
+  }
+  if (patch.selectFavorites) {
+    next.selectFavorites = {
+      ...current.selectFavorites,
+      ...normalizeSelectFavorites(patch.selectFavorites as Record<string, unknown>),
+    }
   }
 
   const notificationsSource = patch.notifications
@@ -131,7 +180,23 @@ export function updateSettings(patch: Partial<AppSettings>) {
               (stored.notifications as NotificationSettings | undefined)?.providers?.mattermost
                 ?.enabled ??
               DEFAULT_NOTIFICATION_SETTINGS.providers.mattermost.enabled,
+            baseUrl:
+              patch.notifications.providers?.mattermost?.baseUrl ??
+              (stored.notifications as NotificationSettings | undefined)?.providers?.mattermost
+                ?.baseUrl ??
+              DEFAULT_NOTIFICATION_SETTINGS.providers.mattermost.baseUrl,
+            loginId:
+              patch.notifications.providers?.mattermost?.loginId ??
+              (stored.notifications as NotificationSettings | undefined)?.providers?.mattermost
+                ?.loginId ??
+              DEFAULT_NOTIFICATION_SETTINGS.providers.mattermost.loginId,
+            notifyOnCreate:
+              patch.notifications.providers?.mattermost?.notifyOnCreate ??
+              (stored.notifications as NotificationSettings | undefined)?.providers?.mattermost
+                ?.notifyOnCreate ??
+              DEFAULT_NOTIFICATION_SETTINGS.providers.mattermost.notifyOnCreate,
             webhookUrlConfigured: false,
+            passwordConfigured: false,
           },
           email: {
             ...DEFAULT_NOTIFICATION_SETTINGS.providers.email,
@@ -161,7 +226,11 @@ export function updateSettings(patch: Partial<AppSettings>) {
         },
         mattermost: {
           enabled: mergedNotifications.providers.mattermost.enabled,
+          baseUrl: mergedNotifications.providers.mattermost.baseUrl?.trim() || '',
+          loginId: mergedNotifications.providers.mattermost.loginId?.trim() || '',
+          notifyOnCreate: Boolean(mergedNotifications.providers.mattermost.notifyOnCreate),
           webhookUrlConfigured: false,
+          passwordConfigured: false,
         },
         email: {
           enabled: mergedNotifications.providers.email.enabled,

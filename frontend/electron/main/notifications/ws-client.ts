@@ -55,6 +55,7 @@ export class NotificationsWsClient {
   private onEvent: EventHandler | null = null
   private onHistory: HistoryHandler | null = null
   private onStatus: StatusHandler | null = null
+  private lastStatusLog = ''
 
   configure(options: {
     apiUrl: string
@@ -74,6 +75,15 @@ export class NotificationsWsClient {
     return this.socket?.readyState === WebSocket.OPEN
   }
 
+  /** Same endpoint already connected — skip tear-down/reconnect. */
+  matches(apiUrl: string, projectId?: string) {
+    return (
+      this.connected &&
+      this.apiUrl === apiUrl.trim() &&
+      (this.projectId || '') === (projectId || '')
+    )
+  }
+
   start() {
     this.stopped = false
     this.connect()
@@ -81,17 +91,49 @@ export class NotificationsWsClient {
 
   stop() {
     this.stopped = true
+    this.clearReconnect()
+    this.closeSocket()
+    this.emitStatus({ connected: false, message: 'disconnected' })
+  }
+
+  private clearReconnect() {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = null
-    this.socket?.close()
+  }
+
+  private closeSocket() {
+    const socket = this.socket
     this.socket = null
-    this.onStatus?.({ connected: false, message: 'stopped' })
+    if (!socket) return
+    try {
+      socket.close()
+    } catch {
+      // ignore
+    }
+  }
+
+  private emitStatus(status: { connected: boolean; message?: string }) {
+    const key = `${status.connected}:${status.message || ''}`
+    if (key !== this.lastStatusLog) {
+      this.lastStatusLog = key
+      if (status.connected) {
+        console.log('[notifications] realtime connected')
+      } else if (status.message && status.message !== 'disconnected') {
+        console.log(`[notifications] realtime ${status.message}`)
+      }
+    }
+    this.onStatus?.(status)
   }
 
   private connect() {
     if (this.stopped) return
     if (!this.apiUrl) {
-      this.onStatus?.({ connected: false, message: 'apiUrl is empty' })
+      this.emitStatus({ connected: false, message: 'apiUrl is empty' })
+      return
+    }
+
+    // Already on the right socket — do not bounce the connection.
+    if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
       return
     }
 
@@ -100,19 +142,22 @@ export class NotificationsWsClient {
     try {
       wsUrl = toWsUrl(this.apiUrl, token, this.projectId)
     } catch (error) {
-      this.onStatus?.({
+      this.emitStatus({
         connected: false,
         message: error instanceof Error ? error.message : 'Invalid apiUrl',
       })
       return
     }
 
+    this.clearReconnect()
+    this.closeSocket()
+
+    let socket: WebSocket
     try {
-      this.socket?.close()
-      console.log(`[notifications] ws connecting ${redactWsUrl(wsUrl)}`)
-      this.socket = new WebSocket(wsUrl)
+      socket = new WebSocket(wsUrl)
+      this.socket = socket
     } catch (error) {
-      this.onStatus?.({
+      this.emitStatus({
         connected: false,
         message: error instanceof Error ? error.message : 'WebSocket open failed',
       })
@@ -120,9 +165,10 @@ export class NotificationsWsClient {
       return
     }
 
-    this.socket.addEventListener('open', () => {
+    socket.addEventListener('open', () => {
+      if (this.socket !== socket || this.stopped) return
       this.attempt = 0
-      this.onStatus?.({ connected: true, message: 'connected' })
+      this.emitStatus({ connected: true, message: 'connected' })
       const subscribe = {
         type: 'subscribe',
         filters: {
@@ -136,15 +182,11 @@ export class NotificationsWsClient {
           ],
         },
       }
-      this.socket?.send(JSON.stringify(subscribe))
-      console.log(
-        `[notifications] ws subscribed` +
-          ` projectId=${this.projectId || '*'}` +
-          ` eventTypes=${subscribe.filters.eventTypes.join(',')}`,
-      )
+      socket.send(JSON.stringify(subscribe))
     })
 
-    this.socket.addEventListener('message', (message) => {
+    socket.addEventListener('message', (message) => {
+      if (this.socket !== socket) return
       try {
         const data = JSON.parse(String(message.data)) as {
           type?: string
@@ -155,10 +197,6 @@ export class NotificationsWsClient {
         }
         if (data.type === 'hello') {
           const history = Array.isArray(data.history) ? data.history : []
-          console.log(
-            `[notifications] ws hello clientId=${data.clientId || '?'}` +
-              ` history=${history.length}`,
-          )
           if (history.length) this.onHistory?.(history)
           return
         }
@@ -167,11 +205,6 @@ export class NotificationsWsClient {
           return
         }
         if (data.type === 'event' && data.event) {
-          console.log(
-            `[notifications] ws event` +
-              ` type=${data.event.eventType}` +
-              ` workItemId=${data.event.workItemId ?? '-'}`,
-          )
           this.onEvent?.(data.event)
         }
       } catch {
@@ -179,23 +212,28 @@ export class NotificationsWsClient {
       }
     })
 
-    this.socket.addEventListener('close', () => {
-      this.onStatus?.({ connected: false, message: 'disconnected' })
-      console.log('[notifications] ws disconnected')
+    socket.addEventListener('close', () => {
+      // Ignore close from a superseded/replaced socket — prevents reconnect storms.
+      if (this.socket !== socket) return
+      this.socket = null
+      this.emitStatus({ connected: false, message: 'disconnected' })
       this.scheduleReconnect()
     })
 
-    this.socket.addEventListener('error', () => {
-      this.onStatus?.({ connected: false, message: 'socket error' })
-      console.warn('[notifications] ws socket error')
+    socket.addEventListener('error', () => {
+      if (this.socket !== socket) return
+      // `close` follows; reconnect is scheduled there.
     })
   }
 
   private scheduleReconnect() {
     if (this.stopped || !this.apiUrl) return
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    if (this.reconnectTimer) return
     const delay = Math.min(30_000, 1000 * 2 ** Math.min(this.attempt, 5))
     this.attempt += 1
-    this.reconnectTimer = setTimeout(() => this.connect(), delay)
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect()
+    }, delay)
   }
 }

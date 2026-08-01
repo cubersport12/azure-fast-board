@@ -32,6 +32,8 @@ function isEventAssignedToMe(
   return anyIdentityMatch(mine, theirs)
 }
 
+const SELF_ACTION_TTL_MS = 2 * 60_000
+
 export class NotificationService {
   private timer: NodeJS.Timeout | null = null
   private snapshot: WorkItem[] | null = null
@@ -43,6 +45,8 @@ export class NotificationService {
   private ws = new NotificationsWsClient()
   private wsConnected = false
   private seenEventIds = new Set<string>()
+  /** Work item ids recently changed by this app — hub events for them are auto-read. */
+  private recentSelfActions = new Map<number, number>()
 
   constructor(
     private readonly getClient: () => AzureClient | null,
@@ -55,6 +59,27 @@ export class NotificationService {
     }
   }
 
+  /** Call after local create/update/move/comment so hub echoes don't toast. */
+  noteSelfAction(workItemId: number) {
+    if (!Number.isFinite(workItemId) || workItemId <= 0) return
+    const now = Date.now()
+    this.recentSelfActions.set(workItemId, now)
+    for (const [id, at] of this.recentSelfActions) {
+      if (now - at > SELF_ACTION_TTL_MS) this.recentSelfActions.delete(id)
+    }
+  }
+
+  private isRecentSelfAction(workItemId?: number | null) {
+    if (!workItemId || !Number.isFinite(workItemId)) return false
+    const at = this.recentSelfActions.get(workItemId)
+    if (!at) return false
+    if (Date.now() - at > SELF_ACTION_TTL_MS) {
+      this.recentSelfActions.delete(workItemId)
+      return false
+    }
+    return true
+  }
+
   private historyLimit() {
     return Math.max(1, getSettings().notifications.maxCached || 100)
   }
@@ -63,12 +88,15 @@ export class NotificationService {
     this.history = saveNotificationHistory(this.history)
   }
 
+  private bootstrapGen = 0
+
   start() {
     this.stop()
     this.history = getNotificationHistory().map(healNotificationIds)
     const settings = getSettings()
     if (!settings.notifications.enabled) return
 
+    this.running = true
     void this.bootstrapRealtime(settings.notifications.apiUrl)
 
     // Poll is fallback when WebSocket is unavailable / not configured.
@@ -81,14 +109,23 @@ export class NotificationService {
   }
 
   private async bootstrapRealtime(apiUrl: string) {
+    const gen = ++this.bootstrapGen
     const client = this.getClient()
     if (client) {
       await this.ensureIdentity(client)
       await this.ensureProjectId(client)
     }
+    // A newer start/restart superseded this bootstrap.
+    if (gen !== this.bootstrapGen || !this.running) return
+
+    const trimmed = apiUrl.trim()
+    if (trimmed && this.ws.matches(trimmed, this.currentProjectId)) {
+      this.wsConnected = true
+      return
+    }
 
     this.ws.configure({
-      apiUrl,
+      apiUrl: trimmed,
       projectId: this.currentProjectId,
       onEvent: (event) => {
         void this.handleRealtimeEvent(event)
@@ -102,18 +139,16 @@ export class NotificationService {
       },
       onStatus: (status) => {
         this.wsConnected = status.connected
-        console.log(`[notifications] realtime ${status.message || (status.connected ? 'up' : 'down')}`)
       },
     })
 
-    if (apiUrl.trim()) {
+    if (trimmed) {
       this.ws.start()
-    } else {
-      console.log('[notifications] apiUrl empty — WebSocket disabled, poll fallback only')
     }
   }
 
   stop() {
+    this.bootstrapGen += 1
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     this.running = false
@@ -123,6 +158,25 @@ export class NotificationService {
 
   restart() {
     this.start()
+  }
+
+  /** Restart only when notification transport settings actually changed. */
+  restartIfNeeded(previous: ReturnType<typeof getSettings>, next: ReturnType<typeof getSettings>) {
+    const prevN = previous.notifications
+    const nextN = next.notifications
+    const changed =
+      prevN.enabled !== nextN.enabled ||
+      prevN.apiUrl.trim() !== nextN.apiUrl.trim() ||
+      prevN.onlyAssignedToMe !== nextN.onlyAssignedToMe ||
+      prevN.maxCached !== nextN.maxCached ||
+      JSON.stringify(prevN.events) !== JSON.stringify(nextN.events) ||
+      JSON.stringify(prevN.providers.app) !== JSON.stringify(nextN.providers.app) ||
+      prevN.providers.mattermost.enabled !== nextN.providers.mattermost.enabled ||
+      prevN.providers.mattermost.baseUrl !== nextN.providers.mattermost.baseUrl ||
+      prevN.providers.mattermost.loginId !== nextN.providers.mattermost.loginId ||
+      previous.pollIntervalMs !== next.pollIntervalMs ||
+      previous.insecureTls !== next.insecureTls
+    if (changed) this.restart()
   }
 
   getHistory() {
@@ -278,27 +332,31 @@ export class NotificationService {
       }
     }
 
+    const workItemId = event.workItemId || extractWorkItemIdFromText(event.message)
+    const selfInitiated = this.isRecentSelfAction(workItemId)
     const draft = healNotificationIds({
       id: event.id || randomUUID(),
       eventType: event.eventType,
       title:
         event.workItemTitle ||
         event.message ||
-        `${event.eventType}${event.workItemId ? ` #${event.workItemId}` : ''}`,
+        `${event.eventType}${workItemId ? ` #${workItemId}` : ''}`,
       body: event.message || event.workItemTitle || 'Событие доски',
-      workItemId: event.workItemId || extractWorkItemIdFromText(event.message),
+      workItemId: workItemId,
       workItemTitle: event.workItemTitle,
       workItemType: event.workItemType,
       commentId: event.commentId,
       createdAt: event.createdAt || new Date().toISOString(),
       source: 'azure-service-hook',
-      read: Boolean(options?.fromHistory),
+      // History replay or our own create/update/comment — store as read, no toast.
+      read: Boolean(options?.fromHistory) || selfInitiated,
     })
 
     console.log(
       `[notifications] dispatch ${eventTypeRaw} #${draft.workItemId ?? '-'}` +
         (draft.commentId ? ` commentId=${draft.commentId}` : '') +
-        (options?.fromHistory ? ' (history)' : ''),
+        (options?.fromHistory ? ' (history)' : '') +
+        (selfInitiated ? ' (self)' : ''),
     )
 
     await this.dispatch(draft)
@@ -335,6 +393,7 @@ export class NotificationService {
       this.snapshot = items
 
       for (const change of changes) {
+        const selfInitiated = this.isRecentSelfAction(change.item.id)
         const notification: BoardNotification = {
           id: randomUUID(),
           eventType: change.eventType,
@@ -344,6 +403,7 @@ export class NotificationService {
           workItemTitle: change.item.title,
           createdAt: new Date().toISOString(),
           source: 'poll',
+          read: selfInitiated,
         }
         await this.dispatch(notification)
       }

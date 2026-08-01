@@ -71,6 +71,14 @@ export interface MattermostNotificationProviderSettings {
   enabled: boolean
   /** Incoming webhook URL (secret stored separately when set via IPC). */
   webhookUrlConfigured: boolean
+  /** Mattermost server base URL, e.g. https://mm.example.com */
+  baseUrl: string
+  /** Username, email or LDAP id for session login (password is encrypted separately). */
+  loginId: string
+  /** Password stored in encrypted secrets, not in settings JSON. */
+  passwordConfigured: boolean
+  /** After creating a work item, post a formatted card to MM (DM to self). */
+  notifyOnCreate: boolean
 }
 
 export interface EmailNotificationProviderSettings {
@@ -103,6 +111,13 @@ export interface NotificationSettings {
   }
 }
 
+/** Persisted favorite row for Dropdown (value alone is not enough for async search lists). */
+export interface SelectFavoriteOption {
+  value: string
+  label: string
+  description?: string
+}
+
 export interface AppSettings {
   launchMinimized: boolean
   hideToTrayOnClose: boolean
@@ -126,6 +141,8 @@ export interface AppSettings {
     creators: string[]
     tags: string[]
   }
+  /** Starred dropdown options keyed by Dropdown `favoritesKey` (keeps label for search-backed lists). */
+  selectFavorites: Record<string, SelectFavoriteOption[]>
   notifications: NotificationSettings
 }
 
@@ -354,6 +371,10 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
     mattermost: {
       enabled: false,
       webhookUrlConfigured: false,
+      baseUrl: '',
+      loginId: '',
+      passwordConfigured: false,
+      notifyOnCreate: false,
     },
     email: {
       enabled: false,
@@ -386,6 +407,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     creators: [],
     tags: [],
   },
+  selectFavorites: {},
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
 }
 

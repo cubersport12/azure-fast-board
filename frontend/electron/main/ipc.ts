@@ -15,8 +15,10 @@ import { AzureClient } from './azure/client'
 import { applyInsecureTls } from './azure/http'
 import {
   clearSecrets,
+  loadMattermostPassword,
   loadPassword,
   loadPat,
+  saveMattermostPassword,
   saveMattermostWebhookUrl,
   savePassword,
   savePat,
@@ -24,6 +26,16 @@ import {
   saveNotificationsApiToken,
 } from './credentials'
 import { toIpcError } from './ipc-error'
+import {
+  connectMattermostAndPingSelf,
+  getMattermostConfigured,
+  listMattermostChannels,
+  listMattermostTeams,
+  notifyWorkItemCreatedToMattermostIfEnabled,
+  getMattermostUsersByIds,
+  searchMattermostUsers,
+  shareWorkItemToMattermost,
+} from './mattermost/client'
 import { NotificationService } from './notifications'
 import {
   clearConnection,
@@ -142,9 +154,11 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => getSettings())
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, (_e, patch) => {
+    const previous = getSettings()
     const next = updateSettings(patch)
     if (next.insecureTls) applyInsecureTls(true)
-    notificationService?.restart()
+    // Theme/filters/sprint must not bounce the WebSocket.
+    notificationService?.restartIfNeeded(previous, next)
     return next
   })
 
@@ -360,14 +374,24 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
     const { attachments = [], ...fields } = input
     const client = requireClient()
     const created = await client.createWorkItem(fields)
+    notificationService?.noteSelfAction(created.id)
     for (const file of attachments) {
       await client.uploadAttachment(created.id, file)
     }
+    // Auto MM notify (self DM) when enabled in settings — don't block create on MM errors.
+    void client
+      .getWorkItem(created.id)
+      .then((detail) =>
+        notifyWorkItemCreatedToMattermostIfEnabled(detail, (url) => client.downloadMedia(url)),
+      )
+      .catch((error) => console.warn('[mattermost] notify on create skipped:', error))
     return created
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsUpdate, async (_e, input: PatchWorkItemInput) => {
-    return requireClient().updateWorkItem(input)
+    const updated = await requireClient().updateWorkItem(input)
+    notificationService?.noteSelfAction(updated.id)
+    return updated
   })
 
   ipcMain.handle(
@@ -376,11 +400,15 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       const client = requireClient()
       const preferred = state?.trim() || column.trim()
       try {
-        return await client.moveWorkItem(id, column, rev, preferred)
+        const moved = await client.moveWorkItem(id, column, rev, preferred)
+        notificationService?.noteSelfAction(moved.id)
+        return moved
       } catch (error) {
         const fallback = columnStateFallback(column)
         if (fallback && fallback !== preferred) {
-          return client.moveWorkItem(id, column, rev, fallback)
+          const moved = await client.moveWorkItem(id, column, rev, fallback)
+          notificationService?.noteSelfAction(moved.id)
+          return moved
         }
         throw error
       }
@@ -395,11 +423,13 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
     const { id, text } = input
     const body = String(text || '').trim()
     if (!body) throw new Error('Comment is empty')
+    notificationService?.noteSelfAction(id)
     // Images are uploaded in the renderer and already inlined as <img> in HTML.
     return requireClient().addComment(id, body)
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsUploadAttachment, async (_e, id: number, file: AttachmentUpload) => {
+    notificationService?.noteSelfAction(id)
     return requireClient().uploadAttachment(id, file)
   })
 
@@ -532,12 +562,16 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       _e,
       secrets: {
         mattermostWebhookUrl?: string | null
+        mattermostPassword?: string | null
         smtpPassword?: string | null
         notificationsApiToken?: string | null
       },
     ) => {
       if (secrets.mattermostWebhookUrl !== undefined) {
         saveMattermostWebhookUrl(secrets.mattermostWebhookUrl)
+      }
+      if (secrets.mattermostPassword !== undefined) {
+        saveMattermostPassword(secrets.mattermostPassword)
       }
       if (secrets.smtpPassword !== undefined) {
         saveSmtpPassword(secrets.smtpPassword)
@@ -547,6 +581,116 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       }
       notificationService?.restart()
       return getSettings()
+    },
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.mattermostConnect,
+    async (
+      _e,
+      input: { baseUrl?: string; loginId?: string; password?: string },
+    ) => {
+      try {
+        const settings = getSettings()
+        const baseUrl = String(input?.baseUrl || settings.notifications.providers.mattermost.baseUrl || '').trim()
+        const loginId = String(input?.loginId || settings.notifications.providers.mattermost.loginId || '').trim()
+        const typedPassword = String(input?.password || '')
+        if (typedPassword) {
+          saveMattermostPassword(typedPassword)
+        }
+        const password = typedPassword || loadMattermostPassword() || ''
+        updateSettings({
+          notifications: {
+            ...settings.notifications,
+            providers: {
+              ...settings.notifications.providers,
+              mattermost: {
+                ...settings.notifications.providers.mattermost,
+                baseUrl,
+                loginId,
+              },
+            },
+          },
+        })
+        return await connectMattermostAndPingSelf({
+          baseUrl,
+          loginId,
+          password,
+          insecureTls: settings.insecureTls,
+        })
+      } catch (error) {
+        throw toIpcError(error)
+      }
+    },
+  )
+
+  ipcMain.handle(IPC_CHANNELS.mattermostConfigured, () => getMattermostConfigured())
+
+  ipcMain.handle(IPC_CHANNELS.mattermostListTeams, async () => {
+    try {
+      return await listMattermostTeams()
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.mattermostListChannels, async (_e, teamId: string) => {
+    try {
+      return await listMattermostChannels(String(teamId || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.mattermostSearchUsers, async (_e, term: string) => {
+    try {
+      return await searchMattermostUsers(String(term || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.mattermostUsersByIds, async (_e, ids: string[]) => {
+    try {
+      return await getMattermostUsersByIds(Array.isArray(ids) ? ids.map(String) : [])
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.mattermostShareWorkItem,
+    async (
+      _e,
+      input: {
+        workItemId?: number
+        mode?: 'channel' | 'user'
+        teamId?: string
+        channelId?: string
+        userId?: string
+      },
+    ) => {
+      try {
+        const workItemId = Number(input?.workItemId)
+        if (!Number.isFinite(workItemId) || workItemId <= 0) {
+          return { ok: false, message: 'Некорректный work item' }
+        }
+        const detail = await requireClient().getWorkItem(workItemId)
+        const mode = input?.mode === 'user' ? 'user' : 'channel'
+        const target =
+          mode === 'user'
+            ? ({ mode: 'user', userId: String(input?.userId || '') } as const)
+            : ({
+                mode: 'channel',
+                teamId: String(input?.teamId || ''),
+                channelId: String(input?.channelId || ''),
+              } as const)
+        return await shareWorkItemToMattermost(detail, target, (url) =>
+          requireClient().downloadMedia(url),
+        )
+      } catch (error) {
+        throw toIpcError(error)
+      }
     },
   )
   ipcMain.handle(IPC_CHANNELS.notificationsHistory, () => notificationService?.getHistory() ?? [])

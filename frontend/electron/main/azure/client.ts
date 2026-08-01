@@ -145,32 +145,6 @@ export function mapWorkItem(raw: RawWorkItem): WorkItem {
   }
 }
 
-function summarizeHtmlField(value: unknown) {
-  if (value == null) return null
-  const html = String(value)
-  const text = html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  const imageSrcs: string[] = []
-  const imgRe = /<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi
-  let match: RegExpExecArray | null
-  while ((match = imgRe.exec(html))) {
-    const src = (match[1] || '').replace(/&amp;/gi, '&').trim()
-    if (src) imageSrcs.push(src.slice(0, 200))
-  }
-  // Also count <img> without a parseable src (broken markup).
-  const imgTags = (html.match(/<img\b/gi) || []).length
-  return {
-    chars: html.length,
-    textPreview: text.slice(0, 120),
-    images: imgTags,
-    imageSrcs,
-    htmlSnippet: html.slice(0, 280),
-  }
-}
-
 export class AzureClient {
   private connection: ConnectionConfig
   private secret: string
@@ -761,19 +735,7 @@ export class AzureClient {
 
   async getWorkItem(id: number): Promise<WorkItemDetail> {
     const url = this.api(`/_apis/wit/workitems/${id}?$expand=all`)
-    console.log(`[azure] GET work item #${id}`, url)
     const raw = await this.request<RawWorkItem>(url)
-    const fields = raw.fields ?? {}
-    const relations = raw.relations ?? []
-    console.log(`[azure] work item #${id} fields`, {
-      type: fields['System.WorkItemType'],
-      title: fields['System.Title'],
-      description: summarizeHtmlField(fields[ADO_FIELD_DESCRIPTION]),
-      reproSteps: summarizeHtmlField(fields[ADO_FIELD_REPRO_STEPS]),
-      attachedFiles: relations.filter((r) => r.rel === 'AttachedFile').length,
-      relationRels: [...new Set(relations.map((r) => r.rel))],
-    })
-
     const base = mapWorkItem(raw)
     const comments = await this.getComments(id)
     const attachments = (raw.relations ?? [])
@@ -790,7 +752,7 @@ export class AzureClient {
       attachments,
       history: [],
       relations: raw.relations ?? [],
-      fields,
+      fields: raw.fields ?? {},
     }
   }
 

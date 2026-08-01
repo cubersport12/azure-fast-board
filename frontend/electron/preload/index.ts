@@ -69,6 +69,15 @@ const api: AzureFastBoardApi = {
   testServiceHook: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.serviceHooksTest, id),
   setNotificationSecrets: (secrets) =>
     ipcRenderer.invoke(IPC_CHANNELS.notificationsSecretsSet, secrets),
+  connectMattermost: (input) => ipcRenderer.invoke(IPC_CHANNELS.mattermostConnect, input),
+  isMattermostConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.mattermostConfigured),
+  listMattermostTeams: () => ipcRenderer.invoke(IPC_CHANNELS.mattermostListTeams),
+  listMattermostChannels: (teamId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mattermostListChannels, teamId),
+  searchMattermostUsers: (term) => ipcRenderer.invoke(IPC_CHANNELS.mattermostSearchUsers, term),
+  getMattermostUsersByIds: (ids) => ipcRenderer.invoke(IPC_CHANNELS.mattermostUsersByIds, ids),
+  shareWorkItemToMattermost: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mattermostShareWorkItem, input),
   getNotificationHistory: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsHistory),
   markNotificationRead: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkRead, id),
   markNotificationsReadByWorkItem: (workItemId: number) =>

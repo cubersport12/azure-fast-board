@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from '../../../shared/ipc'
 import type { BoardNotification, NotificationSettings } from '../../../shared/types'
 import { loadMattermostWebhookUrl, loadSmtpPassword } from '../credentials'
 import { applyInsecureTls, azureFetch } from '../azure/http'
+import { getMattermostConfigured, postMattermostToSelf } from '../mattermost/client'
 import { clearTaskbarAttention, requestTaskbarAttention } from './attention'
 import {
   formatWindowsNotification,
@@ -103,14 +104,21 @@ async function deliverApp(
 }
 
 async function deliverMattermost(notification: BoardNotification, ctx: ProviderContext) {
+  const { title, body } = formatWindowsNotification(notification)
+  const text = `**${title}**\n${body}`
+
+  if (getMattermostConfigured()) {
+    await postMattermostToSelf(text)
+    return
+  }
+
+  // Legacy webhook (if still stored).
   const webhookUrl = loadMattermostWebhookUrl()
   if (!webhookUrl) {
-    throw new Error('Mattermost webhook URL is not configured')
+    throw new Error('Mattermost не настроен (логин/пароль)')
   }
   if (ctx.insecureTls) applyInsecureTls(true)
 
-  const { title, body } = formatWindowsNotification(notification)
-  const text = `**${title}**\n${body}`
   const response = await azureFetch(
     webhookUrl,
     {
