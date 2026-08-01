@@ -118,6 +118,19 @@ export interface SelectFavoriteOption {
   description?: string
 }
 
+/** User-defined filter preset shared by board and work-item list (local electron-store). */
+export interface StoredFilterPreset {
+  id: string
+  name: string
+  filters: {
+    types: string[]
+    states: string[]
+    assignees: string[]
+    creators: string[]
+    tags: string[]
+  }
+}
+
 export interface AppSettings {
   launchMinimized: boolean
   hideToTrayOnClose: boolean
@@ -141,6 +154,8 @@ export interface AppSettings {
     creators: string[]
     tags: string[]
   }
+  /** Custom filter presets (create / rename / update / delete). */
+  filterPresets: StoredFilterPreset[]
   /** Starred dropdown options keyed by Dropdown `favoritesKey` (keeps label for search-backed lists). */
   selectFavorites: Record<string, SelectFavoriteOption[]>
   notifications: NotificationSettings
@@ -407,6 +422,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     creators: [],
     tags: [],
   },
+  filterPresets: [],
   selectFavorites: {},
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
 }

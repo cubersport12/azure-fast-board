@@ -8,6 +8,7 @@ import {
   type NotificationSettings,
   type SavedView,
   type SelectFavoriteOption,
+  type StoredFilterPreset,
   type WorkItem,
 } from '../../shared/types'
 import { normalizeIterationFieldPath } from '../../shared/utils'
@@ -77,6 +78,35 @@ function mergeNotificationSettings(
   }
 }
 
+function normalizeFilterList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((entry) => String(entry || '').trim()).filter(Boolean)
+}
+
+function normalizeFilterPresets(raw: unknown): StoredFilterPreset[] {
+  if (!Array.isArray(raw)) return []
+  const out: StoredFilterPreset[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const id = String((entry as StoredFilterPreset).id || '').trim()
+    const name = String((entry as StoredFilterPreset).name || '').trim()
+    if (!id || !name) continue
+    const filters = (entry as StoredFilterPreset).filters
+    out.push({
+      id,
+      name,
+      filters: {
+        types: normalizeFilterList(filters?.types),
+        states: normalizeFilterList(filters?.states),
+        assignees: normalizeFilterList(filters?.assignees),
+        creators: normalizeFilterList(filters?.creators),
+        tags: normalizeFilterList(filters?.tags),
+      },
+    })
+  }
+  return out
+}
+
 /** Accepts legacy `string[]` favorites and normalizes to labeled options. */
 function normalizeSelectFavorites(
   raw: Record<string, unknown> | undefined,
@@ -127,6 +157,7 @@ export function getSettings() {
       creators: settings.filters?.creators ?? [],
       tags: settings.filters?.tags ?? [],
     },
+    filterPresets: normalizeFilterPresets(settings.filterPresets),
     selectFavorites: normalizeSelectFavorites(
       settings.selectFavorites as Record<string, unknown> | undefined,
     ),
@@ -151,6 +182,9 @@ export function updateSettings(patch: Partial<AppSettings>) {
   }
   if (patch.selectedIterationPath !== undefined) {
     next.selectedIterationPath = normalizeIterationFieldPath(patch.selectedIterationPath)
+  }
+  if (patch.filterPresets) {
+    next.filterPresets = normalizeFilterPresets(patch.filterPresets)
   }
   if (patch.selectFavorites) {
     next.selectFavorites = {

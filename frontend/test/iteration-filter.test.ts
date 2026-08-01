@@ -133,4 +133,25 @@ describe('filter presets', () => {
     expect(applyWorkItemFilters(items, '', done, 'Alex').map((entry) => entry.id)).toEqual([2])
     expect(applyWorkItemFilters(items, '', open, 'Alex').map((entry) => entry.id)).toEqual([1])
   })
+
+  it('matches custom filter presets by stored filters', () => {
+    const custom = {
+      id: 'custom-1',
+      filters: {
+        types: ['Bug'],
+        states: [],
+        assignees: [ME_ASSIGNEE],
+        creators: [],
+        tags: [],
+      },
+    }
+    expect(matchFilterPreset(custom.filters, availableStates, [custom])).toBe('custom-1')
+    expect(
+      matchFilterPreset(
+        { ...custom.filters, types: ['Task'] },
+        availableStates,
+        [custom],
+      ),
+    ).toBeNull()
+  })
 })

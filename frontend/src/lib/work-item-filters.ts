@@ -171,11 +171,33 @@ export function filtersForPreset(
 export function matchFilterPreset(
   filters: WorkItemFilters,
   availableStates: string[],
-): FilterPresetId | null {
+  customPresets: Array<{ id: string; filters: WorkItemFilters }> = [],
+): string | null {
   for (const preset of FILTER_PRESETS) {
     if (filtersEqual(filters, filtersForPreset(preset.id, availableStates))) return preset.id
   }
+  for (const preset of customPresets) {
+    if (filtersEqual(filters, {
+      types: preset.filters.types ?? [],
+      states: preset.filters.states ?? [],
+      assignees: preset.filters.assignees ?? [],
+      creators: preset.filters.creators ?? [],
+      tags: preset.filters.tags ?? [],
+    })) {
+      return preset.id
+    }
+  }
   return null
+}
+
+export function normalizeWorkItemFilters(filters: Partial<WorkItemFilters> | undefined): WorkItemFilters {
+  return {
+    types: filters?.types ?? [],
+    states: filters?.states ?? [],
+    assignees: filters?.assignees ?? [],
+    creators: filters?.creators ?? [],
+    tags: filters?.tags ?? [],
+  }
 }
 
 export function applyWorkItemFilters(
