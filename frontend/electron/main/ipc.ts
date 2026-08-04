@@ -169,13 +169,20 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       const { pat, password, ...rest } = config
       const authMethod = rest.authMethod || (password ? 'password' : 'pat')
       if (authMethod === 'password') {
-        if (!password?.trim() || !rest.username?.trim()) {
+        if (!rest.username?.trim()) {
+          throw new Error('Username is required')
+        }
+        if (password?.trim()) {
+          savePassword(password.trim())
+        } else if (!loadPassword()) {
           throw new Error('Username and password are required')
         }
-        savePassword(password.trim())
       } else {
-        if (!pat?.trim()) throw new Error('PAT is required')
-        savePat(pat.trim())
+        if (pat?.trim()) {
+          savePat(pat.trim())
+        } else if (!loadPat()) {
+          throw new Error('PAT is required')
+        }
       }
       const saved = saveConnection({
         ...rest,
@@ -234,7 +241,9 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       try {
         const insecureTls = Boolean(creds.insecureTls ?? withTls())
         if (insecureTls) applyInsecureTls(true)
-        const authMethod = creds.authMethod || (creds.password ? 'password' : 'pat')
+        const authMethod = creds.authMethod || (creds.password ? 'password' : getConnection()?.authMethod) || 'password'
+        const password = creds.password || loadPassword() || undefined
+        const pat = creds.pat || loadPat() || undefined
         const client = new AzureClient({
           connection: {
             serverUrl: normalizeServerUrl(creds.serverUrl),
@@ -245,8 +254,8 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
             username: creds.username?.trim() || undefined,
             authMethod,
           },
-          pat: creds.pat,
-          password: creds.password,
+          pat,
+          password,
           username: creds.username,
           insecureTls,
         })
@@ -275,7 +284,9 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       try {
         const insecureTls = Boolean(creds.insecureTls ?? withTls())
         if (insecureTls) applyInsecureTls(true)
-        const authMethod = creds.authMethod || (creds.password ? 'password' : 'pat')
+        const authMethod = creds.authMethod || (creds.password ? 'password' : getConnection()?.authMethod) || 'password'
+        const password = creds.password || loadPassword() || undefined
+        const pat = creds.pat || loadPat() || undefined
         const client = new AzureClient({
           connection: {
             serverUrl: normalizeServerUrl(creds.serverUrl),
@@ -286,8 +297,8 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
             username: creds.username?.trim() || undefined,
             authMethod,
           },
-          pat: creds.pat,
-          password: creds.password,
+          pat,
+          password,
           username: creds.username,
           insecureTls,
         })
@@ -317,7 +328,9 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       try {
         const insecureTls = Boolean(creds.insecureTls ?? withTls())
         if (insecureTls) applyInsecureTls(true)
-        const authMethod = creds.authMethod || (creds.password ? 'password' : 'pat')
+        const authMethod = creds.authMethod || (creds.password ? 'password' : getConnection()?.authMethod) || 'password'
+        const password = creds.password || loadPassword() || undefined
+        const pat = creds.pat || loadPat() || undefined
         const client = new AzureClient({
           connection: {
             serverUrl: normalizeServerUrl(creds.serverUrl),
@@ -328,8 +341,8 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
             username: creds.username?.trim() || undefined,
             authMethod,
           },
-          pat: creds.pat,
-          password: creds.password,
+          pat,
+          password,
           username: creds.username,
           insecureTls,
         })
