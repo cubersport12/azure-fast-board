@@ -19,7 +19,7 @@ import {
   type IterationPathsResult,
   type IterationPathOption,
 } from '../../../shared/types'
-import { parseTags, normalizeIterationFieldPath } from '../../../shared/utils'
+import { parseTags, normalizeAreaFieldPath, normalizeIterationFieldPath } from '../../../shared/utils'
 import { AzureDevOpsError } from './errors'
 import { applyInsecureTls, azureFetch, formatNetworkError } from './http'
 
@@ -767,7 +767,10 @@ export class AzureClient {
       ops.push({ op: 'add', path: '/fields/System.AssignedTo', value: input.assignedTo })
     }
     if (input.areaPath) {
-      ops.push({ op: 'add', path: '/fields/System.AreaPath', value: input.areaPath })
+      const areaPath = normalizeAreaFieldPath(input.areaPath, this.connection.project)
+      if (areaPath) {
+        ops.push({ op: 'add', path: '/fields/System.AreaPath', value: areaPath })
+      }
     }
     if (input.iterationPath) {
       const iterationPath = normalizeIterationFieldPath(
@@ -808,6 +811,9 @@ export class AzureClient {
         let next = value
         if (key === 'System.IterationPath' && typeof value === 'string') {
           next = normalizeIterationFieldPath(value, this.connection.project) || null
+        }
+        if (key === 'System.AreaPath' && typeof value === 'string') {
+          next = normalizeAreaFieldPath(value, this.connection.project) || null
         }
         return {
           op: 'add',
@@ -1267,16 +1273,21 @@ export class AzureClient {
       children?: ClassificationNode[]
     }
 
-    const toAreaPath = (nodePath?: string, name?: string, project?: string) => {
-      if (nodePath?.trim()) return nodePath.replace(/^\\+/, '').replace(/\//g, '\\')
-      if (project && name) return name === project ? project : `${project}\\${name}`
-      return name?.trim() || ''
+    const toAreaPath = (nodePath?: string, name?: string, projectName?: string) => {
+      const raw = nodePath?.trim()
+        ? nodePath.replace(/^\\+/, '').replace(/\//g, '\\')
+        : projectName && name
+          ? name === projectName
+            ? projectName
+            : `${projectName}\\${name}`
+          : name?.trim() || ''
+      return normalizeAreaFieldPath(raw, projectName)
     }
 
-    const flatten = (node: ClassificationNode, project: string, out: AreaPathOption[]) => {
-      const path = toAreaPath(node.path, node.name, project)
+    const flatten = (node: ClassificationNode, projectName: string, out: AreaPathOption[]) => {
+      const path = toAreaPath(node.path, node.name, projectName)
       if (path) out.push({ path, name: path })
-      for (const child of node.children ?? []) flatten(child, project, out)
+      for (const child of node.children ?? []) flatten(child, projectName, out)
     }
 
     const project = this.connection.project
@@ -1289,10 +1300,10 @@ export class AzureClient {
         defaultValue?: string
         values?: Array<{ value?: string; includeChildren?: boolean }>
       }>(this.api(`/${encodeURIComponent(team)}/_apis/work/teamsettings/teamfieldvalues`))
-      defaultPath = teamFields.defaultValue?.trim() || undefined
+      defaultPath = normalizeAreaFieldPath(teamFields.defaultValue, project) || undefined
       teamRoots = (teamFields.values ?? [])
         .map((entry) => ({
-          value: entry.value?.trim() || '',
+          value: normalizeAreaFieldPath(entry.value, project),
           includeChildren: entry.includeChildren !== false,
         }))
         .filter((entry) => entry.value)
@@ -1326,16 +1337,14 @@ export class AzureClient {
       areas = [{ path: project, name: project }]
     }
 
-    // Display root: Project\Area if present, else project, else shallowest team root.
+    // Field root is the project (not structural Project\Area).
     const byPath = new Map(areas.map((area) => [area.path.toLowerCase(), area.path]))
-    const areaNode = project ? byPath.get(`${project}\\area`.toLowerCase()) : undefined
     const projectNode = project ? byPath.get(project.toLowerCase()) : undefined
     const rootPath =
-      areaNode ||
       projectNode ||
+      project ||
       teamRoots.find((entry) => !entry.value.includes('\\'))?.value ||
       teamRoots[0]?.value ||
-      project ||
       areas[0]?.path
 
     const relativeName = (path: string) => {
@@ -1345,13 +1354,6 @@ export class AzureClient {
       if (path.toLowerCase().startsWith(prefix.toLowerCase())) {
         return path.slice(prefix.length)
       }
-      // Also strip "Project\Area\" even if root is only Project
-      if (project) {
-        const areaPrefix = `${project}\\Area\\`
-        if (path.toLowerCase().startsWith(areaPrefix.toLowerCase())) {
-          return path.slice(areaPrefix.length)
-        }
-      }
       return path
     }
 
@@ -1360,6 +1362,7 @@ export class AzureClient {
     }
 
     if (!defaultPath) defaultPath = rootPath
+    else defaultPath = normalizeAreaFieldPath(defaultPath, project) || rootPath
     if (defaultPath && !areas.some((area) => area.path === defaultPath)) {
       areas.unshift({ path: defaultPath, name: relativeName(defaultPath) })
     }
