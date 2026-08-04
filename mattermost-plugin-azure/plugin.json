@@ -1,0 +1,75 @@
+{
+  "id": "com.azurefastboard.ado",
+  "name": "Azure DevOps Work Items",
+  "description": "Create Bug and Task in Azure DevOps Server (on-prem) via /bug and /task. NTLM/PAT credentials are stored on the Mattermost server.",
+  "homepage_url": "https://github.com/cubersport12/azure-fast-board",
+  "support_url": "https://github.com/cubersport12/azure-fast-board/issues",
+  "release_notes_url": "https://github.com/cubersport12/azure-fast-board",
+  "version": "0.1.0",
+  "min_server_version": "7.0.0",
+  "server": {
+    "executables": {
+      "linux-amd64": "server/dist/plugin-linux-amd64",
+      "linux-arm64": "server/dist/plugin-linux-arm64",
+      "windows-amd64": "server/dist/plugin-windows-amd64.exe"
+    }
+  },
+  "settings_schema": {
+    "header": "Creates work items in on-prem Azure DevOps Server. Each Mattermost user signs in once; credentials are encrypted in the plugin KV store.",
+    "settings": [
+      {
+        "key": "DefaultServerURL",
+        "display_name": "Default Azure DevOps URL",
+        "type": "text",
+        "help_text": "Example: https://devops.company.local/tfs",
+        "placeholder": "https://devops.company.local/tfs",
+        "default": ""
+      },
+      {
+        "key": "DefaultCollection",
+        "display_name": "Default collection",
+        "type": "text",
+        "default": "DefaultCollection"
+      },
+      {
+        "key": "DefaultProject",
+        "display_name": "Default project",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "DefaultTeam",
+        "display_name": "Default team",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "APIVersion",
+        "display_name": "API Version",
+        "type": "text",
+        "default": "7.0"
+      },
+      {
+        "key": "InsecureTLS",
+        "display_name": "Allow insecure TLS",
+        "type": "bool",
+        "help_text": "For corporate/self-signed certificates.",
+        "default": "false"
+      },
+      {
+        "key": "EncryptionKey",
+        "display_name": "Password encryption key",
+        "type": "text",
+        "help_text": "Secret used to encrypt stored passwords/PATs. Set your own in production.",
+        "default": ""
+      },
+      {
+        "key": "WorkItemBaseURL",
+        "display_name": "Work item link base URL",
+        "type": "text",
+        "help_text": "Optional override for work item links.",
+        "default": ""
+      }
+    ]
+  }
+}
