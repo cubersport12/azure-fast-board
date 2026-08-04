@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { IPC_CHANNELS } from '../shared/ipc'
 import { DEFAULT_SETTINGS } from '../shared/types'
-import { normalizeIterationFieldPath } from '../shared/utils'
+import { normalizeAreaFieldPath, normalizeIterationFieldPath } from '../shared/utils'
 
 describe('shared contracts', () => {
   it('exposes required ipc channels', () => {
@@ -39,5 +39,11 @@ describe('shared contracts', () => {
     )
     expect(normalizeIterationFieldPath('Proj\\Iteration\\Rel\\S1', 'Proj')).toBe('Proj\\Rel\\S1')
     expect(normalizeIterationFieldPath('Proj\\Sprint 1', 'Proj')).toBe('Proj\\Sprint 1')
+  })
+
+  it('strips structural Area node from field paths', () => {
+    expect(normalizeAreaFieldPath('\\Proj\\Area\\Team A', 'Proj')).toBe('Proj\\Team A')
+    expect(normalizeAreaFieldPath('Proj\\Area', 'Proj')).toBe('Proj')
+    expect(normalizeAreaFieldPath('Proj\\Team A', 'Proj')).toBe('Proj\\Team A')
   })
 })

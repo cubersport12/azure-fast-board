@@ -8,29 +8,51 @@ export function parseTags(value?: string | string[]) {
 }
 
 /**
+ * Classification nodes use `Project\Iteration\Sprint` / `Project\Area\Team`,
+ * but System.IterationPath / System.AreaPath expect the structural node stripped.
+ */
+function stripClassificationSegment(
+  path: string,
+  segment: 'Iteration' | 'Area',
+  project?: string,
+) {
+  let next = path.trim().replace(/^\\+/, '').replace(/\//g, '\\').replace(/\\+/g, '\\')
+
+  const strip = (value: string, root: string) => {
+    const prefix = `${root}\\${segment}\\`
+    if (value.toLowerCase().startsWith(prefix.toLowerCase())) {
+      return `${root}\\${value.slice(prefix.length)}`
+    }
+    if (value.toLowerCase() === `${root}\\${segment}`.toLowerCase()) return root
+    return value
+  }
+
+  if (project?.trim()) {
+    next = strip(next, project.trim())
+  } else {
+    const re = new RegExp(`^([^\\\\]+)\\\\${segment}\\\\`, 'i')
+    next = next.replace(re, '$1\\')
+  }
+
+  return next.replace(/\\+/g, '\\')
+}
+
+/**
  * Classification nodes use `Project\Iteration\Sprint`, but System.IterationPath
  * expects `Project\Sprint` (structural "Iteration" node stripped).
  */
 export function normalizeIterationFieldPath(path?: string | null, project?: string) {
   if (!path?.trim()) return ''
-  let next = path.trim().replace(/^\\+/, '').replace(/\//g, '\\').replace(/\\+/g, '\\')
+  return stripClassificationSegment(path, 'Iteration', project)
+}
 
-  const stripIteration = (value: string, root: string) => {
-    const prefix = `${root}\\Iteration\\`
-    if (value.toLowerCase().startsWith(prefix.toLowerCase())) {
-      return `${root}\\${value.slice(prefix.length)}`
-    }
-    if (value.toLowerCase() === `${root}\\iteration`.toLowerCase()) return root
-    return value
-  }
-
-  if (project?.trim()) {
-    next = stripIteration(next, project.trim())
-  } else {
-    next = next.replace(/^([^\\]+)\\Iteration\\/i, '$1\\')
-  }
-
-  return next.replace(/\\+/g, '\\')
+/**
+ * Classification nodes use `Project\Area\Team`, but System.AreaPath
+ * expects `Project\Team` (structural "Area" node stripped).
+ */
+export function normalizeAreaFieldPath(path?: string | null, project?: string) {
+  if (!path?.trim()) return ''
+  return stripClassificationSegment(path, 'Area', project)
 }
 
 export function formatRelative(date?: string) {
