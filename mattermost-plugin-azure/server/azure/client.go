@@ -108,30 +108,6 @@ func (c *Client) Ping() error {
 	return nil
 }
 
-func normalizeIterationPath(path, project string) string {
-	raw := strings.TrimSpace(strings.ReplaceAll(path, "/", `\`))
-	raw = strings.TrimLeft(raw, `\`)
-	if raw == "" {
-		return ""
-	}
-	parts := strings.Split(raw, `\`)
-	filtered := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if strings.EqualFold(p, "Iteration") {
-			continue
-		}
-		filtered = append(filtered, p)
-	}
-	out := strings.Join(filtered, `\`)
-	if project != "" && !strings.HasPrefix(strings.ToLower(out), strings.ToLower(project)) {
-		if out == "" {
-			return project
-		}
-		// keep as-is if already absolute-looking
-	}
-	return out
-}
-
 func (c *Client) CreateWorkItem(input CreateWorkItemInput) (*WorkItem, error) {
 	ops := []map[string]any{
 		{"op": "add", "path": "/fields/" + FieldTitle, "value": input.Title},
@@ -144,7 +120,7 @@ func (c *Client) CreateWorkItem(input CreateWorkItemInput) (*WorkItem, error) {
 	if v := strings.TrimSpace(input.AssignedTo); v != "" {
 		ops = append(ops, map[string]any{"op": "add", "path": "/fields/" + FieldAssignedTo, "value": v})
 	}
-	if v := strings.TrimSpace(input.AreaPath); v != "" {
+	if v := normalizeAreaPath(input.AreaPath, c.conn.Project); v != "" {
 		ops = append(ops, map[string]any{"op": "add", "path": "/fields/" + FieldAreaPath, "value": v})
 	}
 	if v := normalizeIterationPath(input.IterationPath, c.conn.Project); v != "" {
@@ -194,8 +170,8 @@ type classificationNode struct {
 	Children []classificationNode `json:"children"`
 }
 
-func walkPaths(node classificationNode, project string, rootPath string, out *[]PathOption) {
-	path := normalizeIterationPath(strings.TrimLeft(strings.ReplaceAll(node.Path, "/", `\`), `\`), project)
+func walkPaths(node classificationNode, project string, rootPath string, out *[]PathOption, normalize func(string, string) string) {
+	path := normalize(strings.TrimLeft(strings.ReplaceAll(node.Path, "/", `\`), `\`), project)
 	if path == "" && node.Name != "" {
 		if strings.EqualFold(node.Name, project) {
 			path = project
@@ -214,7 +190,7 @@ func walkPaths(node classificationNode, project string, rootPath string, out *[]
 		*out = append(*out, PathOption{Path: path, Name: name})
 	}
 	for _, child := range node.Children {
-		walkPaths(child, project, rootPath, out)
+		walkPaths(child, project, rootPath, out, normalize)
 	}
 }
 
@@ -227,12 +203,12 @@ func (c *Client) ListAreas() ([]PathOption, error) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, err
 	}
-	rootPath := normalizeIterationPath(strings.TrimLeft(strings.ReplaceAll(root.Path, "/", `\`), `\`), c.conn.Project)
+	rootPath := normalizeAreaPath(strings.TrimLeft(strings.ReplaceAll(root.Path, "/", `\`), `\`), c.conn.Project)
 	if rootPath == "" {
 		rootPath = c.conn.Project
 	}
 	var out []PathOption
-	walkPaths(root, c.conn.Project, rootPath, &out)
+	walkPaths(root, c.conn.Project, rootPath, &out, normalizeAreaPath)
 	return out, nil
 }
 
@@ -250,7 +226,7 @@ func (c *Client) ListIterations() ([]PathOption, error) {
 		rootPath = c.conn.Project
 	}
 	var out []PathOption
-	walkPaths(root, c.conn.Project, rootPath, &out)
+	walkPaths(root, c.conn.Project, rootPath, &out, normalizeIterationPath)
 
 	// Prefer team iterations when available.
 	team := c.conn.Team

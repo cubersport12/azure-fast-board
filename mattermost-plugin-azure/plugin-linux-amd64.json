@@ -1,19 +1,22 @@
 {
   "id": "com.azurefastboard.ado",
   "name": "Azure DevOps Work Items",
-  "description": "Create Bug and Task in Azure DevOps Server (on-prem) via /bug and /task. NTLM/PAT credentials are stored on the Mattermost server.",
+  "description": "Create Bug and Task in Azure DevOps Server (on-prem) via /bug and /task. Credentials stay on your Mattermost server (encrypted KV) and are used only to call your ADO — never sent to third parties.",
   "homepage_url": "https://github.com/cubersport12/azure-fast-board",
   "support_url": "https://github.com/cubersport12/azure-fast-board/issues",
   "release_notes_url": "https://github.com/cubersport12/azure-fast-board",
-  "version": "0.1.0",
+  "version": "0.2.5",
   "min_server_version": "7.0.0",
   "server": {
     "executables": {
       "linux-amd64": "server/dist/plugin-linux-amd64"
     }
   },
+  "webapp": {
+    "bundle_path": "webapp/dist/main.js"
+  },
   "settings_schema": {
-    "header": "Creates work items in on-prem Azure DevOps Server. Each Mattermost user signs in once; credentials are encrypted in the plugin KV store.",
+    "header": "Creates work items in on-prem Azure DevOps. Login/password are stored encrypted in the Mattermost plugin KV (per user) and used only for outbound calls from this Mattermost server to your ADO. They are not sent to any external Fast Board cloud. Unlike the Electron app, a Mattermost server plugin cannot keep NTLM secrets only in the browser.",
     "settings": [
       {
         "key": "DefaultServerURL",
@@ -58,7 +61,7 @@
         "key": "EncryptionKey",
         "display_name": "Password encryption key",
         "type": "text",
-        "help_text": "Secret used to encrypt stored passwords/PATs. Set your own in production.",
+        "help_text": "AES key material for encrypting user passwords in plugin KV. Set a long random secret in production. If empty, a random per-install key is stored in KV automatically.",
         "default": ""
       },
       {

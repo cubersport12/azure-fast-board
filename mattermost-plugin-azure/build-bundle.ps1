@@ -2,6 +2,7 @@
 # Layout:
 #   com.azurefastboard.ado/plugin.json
 #   com.azurefastboard.ado/server/dist/plugin-<os>-<arch>  (mode 0755)
+#   com.azurefastboard.ado/webapp/dist/main.js
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -11,12 +12,34 @@ $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';
   [System.Environment]::GetEnvironmentVariable('Path', 'User')
 
 $PluginId = 'com.azurefastboard.ado'
-$Version = '0.1.0'
+$Version = '0.2.5'
 $LdFlags = '-s -w'
 $Dist = Join-Path $Root 'dist'
 $ServerDist = Join-Path $Root 'server\dist'
+$WebappDist = Join-Path $Root 'webapp\dist'
 $MkTar = Join-Path $Root 'tools\mktargz'
-New-Item -ItemType Directory -Force -Path $Dist, $ServerDist | Out-Null
+New-Item -ItemType Directory -Force -Path $Dist, $ServerDist, $WebappDist | Out-Null
+
+function Build-Webapp {
+  Write-Host 'Building webapp...'
+  Push-Location (Join-Path $Root 'webapp')
+  try {
+    if (-not (Test-Path 'node_modules')) {
+      npm ci
+      if ($LASTEXITCODE -ne 0) { npm install }
+    } else {
+      npm install
+    }
+    if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
+    npm run build
+    if ($LASTEXITCODE -ne 0) { throw 'webapp build failed' }
+  }
+  finally {
+    Pop-Location
+  }
+  $mainJs = Join-Path $WebappDist 'main.js'
+  if (-not (Test-Path -LiteralPath $mainJs)) { throw "webapp bundle missing: $mainJs" }
+}
 
 function Build-Binary([string]$Goos, [string]$Goarch, [string]$OutName) {
   Write-Host "Building $OutName ..."
@@ -35,6 +58,8 @@ function Build-Binary([string]$Goos, [string]$Goarch, [string]$OutName) {
   }
 }
 
+Build-Webapp
+
 Write-Host 'Building mktargz helper...'
 go build -o (Join-Path $Dist 'mktargz.exe') (Join-Path $MkTar 'main.go')
 
@@ -50,7 +75,8 @@ function New-Bundle([string]$Label, [string]$ManifestFile, [string[]]$BinaryName
   $argList = @(
     '-out', $bundlePath,
     '-prefix', $PluginId,
-    ((Join-Path $Root $ManifestFile) + '|plugin.json|644')
+    ((Join-Path $Root $ManifestFile) + '|plugin.json|644'),
+    ((Join-Path $WebappDist 'main.js') + '|webapp/dist/main.js|644')
   )
   foreach ($name in $BinaryNames) {
     $argList += ((Join-Path $ServerDist $name) + '|server/dist/' + $name + '|755')

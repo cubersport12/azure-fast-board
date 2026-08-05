@@ -70,7 +70,7 @@ func (p *Plugin) handleAdoCommand(args *model.CommandArgs, rest string) (*model.
 		return p.ephemeral("Команды Azure DevOps:\n" +
 			"• `/bug [название]` — создать Bug\n" +
 			"• `/task [название]` — создать Task\n" +
-			"• `/ado login` — вход (NTLM логин/пароль) → коллекция / проект / команда\n" +
+			"• `/ado login` — вход + выбор коллекции / проекта / команды\n" +
 			"• `/ado logout` — удалить сохранённые учётные данные\n" +
 			"• `/ado status` — текущее подключение"), nil
 	case "login":
@@ -112,11 +112,9 @@ func (p *Plugin) startCreate(args *model.CommandArgs, workItemType, titleHint st
 		if err := p.openAuthDialog(args, workItemType, titleHint); err != nil {
 			return p.ephemeral("Нужна авторизация, но диалог не открылся: " + err.Error()), nil
 		}
-		return p.ephemeral("Сначала войдите (логин/пароль), затем выберите коллекцию, проект и команду."), nil
+		return &model.CommandResponse{}, nil
 	}
-	if err := p.openCreateDialog(args, conn, workItemType, titleHint); err != nil {
-		return p.ephemeral("Не удалось открыть форму: " + err.Error()), nil
-	}
+	p.openCreateModal(args, workItemType, titleHint)
 	return &model.CommandResponse{}, nil
 }
 

@@ -10,12 +10,24 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
+// pluginPath is a site-relative plugin URL (preferred for dialog callbacks / lookups).
+func (p *Plugin) pluginPath(path string) string {
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return fmt.Sprintf("/plugins/%s%s", manifest.Id, path)
+}
+
 func (p *Plugin) pluginURL(path string) string {
 	siteURL := ""
 	if cfg := p.API.GetConfig(); cfg != nil && cfg.ServiceSettings.SiteURL != nil {
 		siteURL = strings.TrimRight(*cfg.ServiceSettings.SiteURL, "/")
 	}
-	return fmt.Sprintf("%s/plugins/%s%s", siteURL, manifest.Id, path)
+	rel := p.pluginPath(path)
+	if siteURL == "" {
+		return rel
+	}
+	return siteURL + rel
 }
 
 func (p *Plugin) openAuthDialog(args *model.CommandArgs, pendingType, pendingTitle string) error {
@@ -32,6 +44,7 @@ func (p *Plugin) openAuthDialog(args *model.CommandArgs, pendingType, pendingTit
 	}
 
 	state, _ := json.Marshal(map[string]string{
+		"step":         "auth",
 		"pendingType":  pendingType,
 		"pendingTitle": pendingTitle,
 		"userId":       args.UserId,
@@ -41,13 +54,15 @@ func (p *Plugin) openAuthDialog(args *model.CommandArgs, pendingType, pendingTit
 
 	dialog := model.OpenDialogRequest{
 		TriggerId: args.TriggerId,
-		URL:       p.pluginURL("/dialog/auth"),
+		URL:       p.pluginPath("/dialog/auth"),
 		Dialog: model.Dialog{
-			Title:            "Вход в Azure DevOps Server",
-			IntroductionText: "Как в Azure Fast Board: сначала **логин/пароль (NTLM)**, формат `DOMAIN\\user`. После входа выберете коллекцию, проект и команду из списков.",
-			SubmitLabel:      "Войти",
-			CallbackId:       "ado_auth",
-			State:            string(state),
+			Title:       "Вход в Azure DevOps",
+			SubmitLabel: "Войти",
+			CallbackId:  "ado_auth",
+			State:       string(state),
+			// Mattermost Apps Form keeps sourceUrl from the *initial* OpenDialog
+			// for field refresh — it is NOT taken from later type:"form" steps.
+			SourceURL: p.pluginPath("/dialog/auth"),
 			Elements: []model.DialogElement{
 				{
 					DisplayName: "URL сервера",
@@ -73,7 +88,7 @@ func (p *Plugin) openAuthDialog(args *model.CommandArgs, pendingType, pendingTit
 					Optional:    false,
 				},
 				{
-					DisplayName: "Небезопасный TLS (корпоративный сертификат)",
+					DisplayName: "Небезопасный TLS",
 					Name:        "insecureTls",
 					Type:        "bool",
 					Default:     fmt.Sprintf("%t", insecure),
@@ -101,6 +116,12 @@ func (p *Plugin) handleAuthDialog(w http.ResponseWriter, r *http.Request) {
 
 	var state map[string]string
 	_ = json.Unmarshal([]byte(req.State), &state)
+
+	// Field refresh or setup submit after credentials step.
+	if req.Type == "refresh" || state["step"] == "setup" {
+		p.handleSetupDialog(w, &req, state)
+		return
+	}
 
 	serverURL := strings.TrimSpace(fmt.Sprint(req.Submission["serverUrl"]))
 	username := strings.TrimSpace(fmt.Sprint(req.Submission["username"]))
@@ -154,7 +175,6 @@ func (p *Plugin) handleAuthDialog(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	// Persist discovered server root (/tfs) back into pending conn.
 	conn = client.Conn()
 
 	userID := req.UserId
@@ -166,43 +186,38 @@ func (p *Plugin) handleAuthDialog(w http.ResponseWriter, r *http.Request) {
 		channelID = state["channelId"]
 	}
 
+	// Prefill defaults from config / first collection.
+	collection := cfg.DefaultCollection
+	if collection == "" && len(collections) > 0 {
+		collection = collections[0].Name
+	}
+	conn.Collection = collection
+	if cfg.DefaultProject != "" {
+		conn.Project = cfg.DefaultProject
+	}
+	if cfg.DefaultTeam != "" {
+		conn.Team = cfg.DefaultTeam
+	}
+
 	pending := &pendingSetup{
 		Conn:         conn,
 		PendingType:  state["pendingType"],
 		PendingTitle: state["pendingTitle"],
 		ChannelID:    channelID,
 		RootID:       state["rootId"],
-		Step:         "collection",
+		Step:         "setup",
 	}
 	if err := p.savePending(userID, pending); err != nil {
 		p.writeDialogError(w, "Вход выполнен, но не удалось сохранить сессию: "+err.Error(), nil)
 		return
 	}
 
-	p.API.SendEphemeralPost(userID, &model.Post{
-		ChannelId: channelID,
-		Message: fmt.Sprintf(
-			"✅ Вход в Azure DevOps выполнен (%d коллекций). Нажмите кнопку, чтобы выбрать **коллекцию → проект → команду**.",
-			len(collections),
-		),
-		Props: model.StringInterface{
-			"attachments": []*model.SlackAttachment{{
-				Actions: []*model.PostAction{{
-					Id:   "ado_pick_collection",
-					Name: "Выбрать коллекцию",
-					Type: model.PostActionTypeButton,
-					Integration: &model.PostActionIntegration{
-						URL: fmt.Sprintf("/plugins/%s/interactive/collection", manifest.Id),
-						Context: map[string]any{
-							"user_id": userID,
-						},
-					},
-				}},
-			}},
-		},
-	})
-
-	_ = json.NewEncoder(w).Encode(&model.SubmitDialogResponse{})
+	form, err := p.buildSetupForm(userID, pending)
+	if err != nil {
+		p.writeDialogError(w, "Не удалось загрузить списки: "+err.Error(), nil)
+		return
+	}
+	p.writeFormResponse(w, form)
 }
 
 func (p *Plugin) writeDialogError(w http.ResponseWriter, message string, errors map[string]string) {

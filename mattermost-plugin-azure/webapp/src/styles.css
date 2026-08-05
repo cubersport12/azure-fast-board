@@ -1,0 +1,287 @@
+.ado-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 16px;
+  overflow: auto;
+}
+
+.ado-modal {
+  width: min(640px, 100%);
+  background: var(--center-channel-bg, #fff);
+  color: var(--center-channel-color, #3d3c40);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
+}
+
+.ado-modal-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.12);
+  position: relative;
+}
+
+.ado-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.ado-modal-sub {
+  font-size: 13px;
+  opacity: 0.65;
+}
+
+.ado-close {
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+}
+
+.ado-modal-body {
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ado-row {
+  display: flex;
+  gap: 12px;
+}
+
+.ado-row > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.ado-grow {
+  flex: 2;
+}
+
+.ado-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ado-field label {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.ado-field input,
+.ado-field select,
+.ado-select-trigger,
+.ado-select-search {
+  border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.24);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 14px;
+  background: var(--center-channel-bg, #fff);
+  color: inherit;
+}
+
+.ado-select {
+  position: relative;
+}
+
+.ado-select-trigger {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ado-select-menu {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--center-channel-bg, #fff);
+  border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.24);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  max-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ado-select-search {
+  margin: 8px;
+  width: calc(100% - 16px);
+}
+
+.ado-select-options {
+  overflow: auto;
+  max-height: 180px;
+}
+
+.ado-select-options button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: inherit;
+  font-size: 13px;
+}
+
+.ado-select-options button:hover,
+.ado-select-options button.active {
+  background: rgba(var(--button-bg-rgb, 28, 88, 217), 0.08);
+}
+
+.ado-select-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.ado-editor {
+  border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.24);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ado-editor-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.12);
+}
+
+.ado-editor-toolbar button {
+  border: 0;
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ado-editor-toolbar button.active,
+.ado-editor-toolbar button:hover {
+  background: rgba(var(--button-bg-rgb, 28, 88, 217), 0.1);
+}
+
+.ado-editor-body .ProseMirror,
+.ado-editor-body .ado-prosemirror {
+  min-height: 120px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  outline: none;
+  font-size: 14px;
+  cursor: text;
+}
+
+.ado-editor-body .ProseMirror img {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: 4px;
+  margin: 6px 0;
+}
+
+.ado-editor-body .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.45);
+  pointer-events: none;
+  height: 0;
+}
+
+.ado-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ado-preview {
+  position: relative;
+  width: 96px;
+  height: 72px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.2);
+}
+
+.ado-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ado-preview button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  border: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ado-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ado-btn-primary,
+.ado-btn-secondary {
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 0;
+}
+
+.ado-btn-primary {
+  background: var(--button-bg, #1c58d9);
+  color: var(--button-color, #fff);
+}
+
+.ado-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ado-btn-secondary {
+  background: transparent;
+  color: inherit;
+  border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.24);
+}
+
+.ado-error {
+  background: rgba(210, 75, 78, 0.12);
+  color: #d24b4e;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
