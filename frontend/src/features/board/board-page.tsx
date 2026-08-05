@@ -17,6 +17,7 @@ import type { BoardCardFieldId, BoardColumn, WorkItem } from '../../../shared/ty
 import { BoardCardPresetBar } from '@/components/board-card-preset-bar'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/primitives'
 import {
   useBoardColumns,
   useConnection,
@@ -108,22 +109,24 @@ const Column = memo(function Column({
   return (
     <div
       ref={setNodeRef}
-      className={`flex min-w-0 flex-1 flex-col rounded-xl border bg-muted/40 ${
-        isOver ? 'border-ring bg-accent/30' : 'border-border'
+      className={`flex min-w-0 flex-1 flex-col rounded-xl border transition-all duration-200 bg-muted/30 ${
+        isOver ? 'border-primary/60 bg-primary/5 ring-2 ring-primary/20' : 'border-border/80'
       }`}
     >
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-foreground">
+      <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5 bg-card/60 rounded-t-xl">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="truncate text-xs font-bold uppercase tracking-wide text-foreground/90">
             {column.name}
-          </div>
-          <div className="text-[11px] text-muted-foreground">{items.length} эл.</div>
+          </span>
+          <Badge variant="secondary" className="text-[11px] font-semibold px-1.5 py-0 h-5">
+            {items.length}
+          </Badge>
         </div>
-        <Button size="icon" variant="ghost" onClick={onAdd} title="Быстрое создание">
-          <Plus className="h-4 w-4" />
+        <Button size="icon" variant="ghost" onClick={onAdd} title="Быстрое создание" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="flex min-h-[120px] max-h-[calc(100vh-280px)] flex-col gap-2 overflow-y-auto overflow-x-hidden p-2">
+      <div className="flex min-h-35 max-h-[calc(100vh-280px)] flex-col gap-2.5 overflow-y-auto overflow-x-hidden p-2.5">
         {items.map((item) => (
           <DraggableCard
             key={item.id}
@@ -133,6 +136,11 @@ const Column = memo(function Column({
             commentPreview={commentPreviews.get(item.id)}
           />
         ))}
+        {items.length === 0 && (
+          <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground/60">
+            Нет элементов
+          </div>
+        )}
       </div>
     </div>
   )
