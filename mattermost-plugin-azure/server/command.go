@@ -75,9 +75,7 @@ func (p *Plugin) handleAdoCommand(args *model.CommandArgs, rest string) (*model.
 			"• `/ado status` — текущее подключение"), nil
 	case "login":
 		_ = p.deletePending(args.UserId)
-		if err := p.openAuthDialog(args, "", ""); err != nil {
-			return p.ephemeral("Не удалось открыть форму входа: " + err.Error()), nil
-		}
+		p.openLoginModal(args, "", "")
 		return &model.CommandResponse{}, nil
 	case "logout":
 		_ = p.deletePending(args.UserId)
@@ -109,9 +107,7 @@ func (p *Plugin) startCreate(args *model.CommandArgs, workItemType, titleHint st
 	}
 	if conn == nil || strings.TrimSpace(conn.Secret) == "" || strings.TrimSpace(conn.Project) == "" {
 		_ = p.deletePending(args.UserId)
-		if err := p.openAuthDialog(args, workItemType, titleHint); err != nil {
-			return p.ephemeral("Нужна авторизация, но диалог не открылся: " + err.Error()), nil
-		}
+		p.openLoginModal(args, workItemType, titleHint)
 		return &model.CommandResponse{}, nil
 	}
 	p.openCreateModal(args, workItemType, titleHint)

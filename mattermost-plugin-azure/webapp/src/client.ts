@@ -106,3 +106,72 @@ export function createWorkItem(payload: CreatePayload) {
     body: form,
   });
 }
+
+export type NamedOption = { name: string; id?: string };
+
+export type LoginDefaults = {
+  serverUrl?: string;
+  username?: string;
+  insecureTls?: boolean;
+};
+
+export function getLoginDefaults() {
+  return api<LoginDefaults>('/login/defaults');
+}
+
+export type LoginPayload = {
+  serverUrl: string;
+  username: string;
+  password: string;
+  insecureTls: boolean;
+  pendingType: string;
+  pendingTitle: string;
+  channelId: string;
+  rootId: string;
+};
+
+export type LoginResponse = {
+  collections: NamedOption[];
+  projects: NamedOption[];
+  teams: NamedOption[];
+  collection?: string;
+  project?: string;
+  team?: string;
+  serverUrl?: string;
+};
+
+export function loginAzure(payload: LoginPayload) {
+  return api<LoginResponse>('/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function setupMeta(collection: string, project: string) {
+  const qs = new URLSearchParams();
+  if (collection) qs.set('collection', collection);
+  if (project) qs.set('project', project);
+  const q = qs.toString();
+  return api<{
+    projects: NamedOption[];
+    teams: NamedOption[];
+    collection?: string;
+    project?: string;
+    team?: string;
+  }>(`/setup/meta${q ? `?${q}` : ''}`);
+}
+
+export function saveSetup(payload: { collection: string; project: string; team: string }) {
+  return api<{
+    ok: boolean;
+    pendingType?: string;
+    pendingTitle?: string;
+    channelId?: string;
+    rootId?: string;
+  }>('/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}

@@ -10,20 +10,9 @@ import {
 import { isRichTextEmpty } from '../lib/clipboard-image';
 import { loadCreatePrefs, resolvePref, saveCreatePrefs } from '../lib/create-prefs';
 import { extractBlobSrcs } from '../lib/html-images';
+import { attachModalFocusGuard } from '../lib/modal-focus';
 import { RichTextEditor } from './RichTextEditor';
 import { SelectField, type SelectOption } from './SelectField';
-
-/** Mattermost listens for keydown and steals focus into #post_textbox. */
-function blurChannelTextbox() {
-  const nodes = document.querySelectorAll<HTMLElement>(
-    '#post_textbox, #reply_textbox, [data-testid="post_textbox"], [data-testid="reply_textbox"], .advanced-text-editor__textbox textarea, .advanced-text-editor__textbox [contenteditable="true"]',
-  );
-  nodes.forEach((el) => el.blur());
-}
-
-function stopKeyToChannel(e: KeyboardEvent) {
-  e.stopPropagation();
-}
 
 export type CreateModalProps = {
   workItemType: string;
@@ -76,36 +65,9 @@ export function CreateModal({
   const pendingImages = useRef(new Map<string, File>());
 
   useEffect(() => {
-    blurChannelTextbox();
-    const el = modalRef.current;
-    if (!el) return undefined;
-
-    const opts: AddEventListenerOptions = { capture: false };
-    el.addEventListener('keydown', stopKeyToChannel, opts);
-    el.addEventListener('keypress', stopKeyToChannel, opts);
-    el.addEventListener('keyup', stopKeyToChannel, opts);
-
-    const onFocusIn = (e: FocusEvent) => {
-      const target = e.target as Node | null;
-      if (!target || !modalRef.current) return;
-      if (modalRef.current.contains(target)) return;
-      const textbox = document.getElementById('post_textbox')
-        || document.getElementById('reply_textbox');
-      if (textbox && (target === textbox || textbox.contains(target))) {
-        blurChannelTextbox();
-        const active = modalRef.current.querySelector<HTMLElement>(
-          'input:not([type="hidden"]), textarea, select, [contenteditable="true"]',
-        );
-        active?.focus();
-      }
-    };
-    document.addEventListener('focusin', onFocusIn, true);
-
+    const detach = attachModalFocusGuard(modalRef.current);
     return () => {
-      el.removeEventListener('keydown', stopKeyToChannel, opts);
-      el.removeEventListener('keypress', stopKeyToChannel, opts);
-      el.removeEventListener('keyup', stopKeyToChannel, opts);
-      document.removeEventListener('focusin', onFocusIn, true);
+      detach();
       pendingImages.current.forEach((_, url) => URL.revokeObjectURL(url));
       pendingImages.current.clear();
     };

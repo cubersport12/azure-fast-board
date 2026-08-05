@@ -12,7 +12,7 @@ $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';
   [System.Environment]::GetEnvironmentVariable('Path', 'User')
 
 $PluginId = 'com.azurefastboard.ado'
-$Version = '0.2.5'
+$Version = '0.3.0'
 $LdFlags = '-s -w'
 $Dist = Join-Path $Root 'dist'
 $ServerDist = Join-Path $Root 'server\dist'

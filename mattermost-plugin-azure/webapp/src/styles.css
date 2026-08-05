@@ -19,6 +19,19 @@
   border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
 }
 
+.ado-modal-narrow {
+  width: min(480px, 100%);
+}
+
+.ado-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
 .ado-modal-header {
   display: flex;
   align-items: baseline;

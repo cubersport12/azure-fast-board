@@ -42,10 +42,6 @@ func (p *Plugin) OnDeactivate() error {
 func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
-	case path == "/dialog/auth":
-		p.handleAuthDialog(w, r)
-	case path == "/interactive/setup":
-		p.handleInteractiveSetup(w, r)
 	case path == "/api/v1/status" && r.Method == http.MethodGet:
 		p.handleAPIStatus(w, r)
 	case path == "/api/v1/meta" && r.Method == http.MethodGet:
@@ -54,6 +50,14 @@ func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Req
 		p.handleAPIAssignees(w, r)
 	case path == "/api/v1/workitems" && r.Method == http.MethodPost:
 		p.handleAPICreateWorkItem(w, r)
+	case path == "/api/v1/login/defaults" && r.Method == http.MethodGet:
+		p.handleAPILoginDefaults(w, r)
+	case path == "/api/v1/login" && r.Method == http.MethodPost:
+		p.handleAPILogin(w, r)
+	case path == "/api/v1/setup/meta" && r.Method == http.MethodGet:
+		p.handleAPISetupMeta(w, r)
+	case path == "/api/v1/setup" && r.Method == http.MethodPost:
+		p.handleAPISetup(w, r)
 	case strings.HasPrefix(path, "/api/v1/"):
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	default:
