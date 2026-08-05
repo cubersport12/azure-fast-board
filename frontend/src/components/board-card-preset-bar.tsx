@@ -191,7 +191,7 @@ export function BoardCardPresetBar() {
       </div>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-950">
+        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
           {presets.map((preset) => (
             <button
               key={preset.id}

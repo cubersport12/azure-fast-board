@@ -304,17 +304,17 @@ export function Dropdown(props: DropdownProps) {
 
   return (
     <div className={cn(label ? 'min-w-[160px] flex-1' : undefined, className)} ref={rootRef}>
-      {label && <div className="mb-1 text-xs font-medium text-slate-500">{label}</div>}
+      {label && <div className="mb-1 text-xs font-medium text-muted-foreground">{label}</div>}
       <div className="relative">
         <button
           id={id}
           type="button"
           disabled={disabled}
           className={cn(
-            'flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-white px-3 text-left text-sm dark:bg-slate-950',
+            'flex h-8 w-full items-center justify-between gap-2 rounded-lg border bg-background px-2.5 text-left text-sm shadow-xs transition-colors',
             hasSelection
-              ? 'border-sky-300 text-slate-900 dark:border-sky-700 dark:text-slate-100'
-              : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300',
+              ? 'border-ring/30 text-foreground'
+              : 'border-input text-muted-foreground',
             disabled && 'opacity-60',
           )}
           aria-haspopup="listbox"
@@ -323,14 +323,14 @@ export function Dropdown(props: DropdownProps) {
           onClick={() => setOpen((current) => !current)}
         >
           <span className="truncate">{triggerLabel}</span>
-          <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-400 transition', open && 'rotate-180')} />
+          <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition', open && 'rotate-180')} />
         </button>
 
         {open && (
-          <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
             {searchable && (
-              <div className="flex items-center gap-2 border-b border-slate-100 px-2 py-1.5 dark:border-slate-800">
-                <Search className="h-3.5 w-3.5 text-slate-400" />
+              <div className="flex items-center gap-2 border-b border-border px-2 py-1.5">
+                <Search className="h-3.5 w-3.5 text-muted-foreground" />
                 <input
                   ref={searchRef}
                   value={query}
@@ -358,13 +358,13 @@ export function Dropdown(props: DropdownProps) {
                     }
                   }}
                   placeholder={searchPlaceholder}
-                  className="h-7 w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500"
+                  className="h-7 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
                 />
               </div>
             )}
             <div id={listId} role="listbox" className="max-h-60 overflow-auto py-1">
               {suggestionsLabel && filtered.length > 0 && (
-                <div className="px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <div className="px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   {suggestionsLabel}
                 </div>
               )}
@@ -375,33 +375,33 @@ export function Dropdown(props: DropdownProps) {
                     role="option"
                     aria-selected={!props.value}
                     className={cn(
-                      'flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800',
-                      activeIndex === 0 && 'bg-slate-50 dark:bg-slate-800',
+                      'flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted',
+                      activeIndex === 0 && 'bg-muted',
                     )}
                     onMouseEnter={() => setActiveIndex(0)}
                     onClick={() => chooseSingle('')}
                   >
                     {emptyLabel}
-                    {!props.value && <Check className="h-3.5 w-3.5 text-sky-600" />}
+                    {!props.value && <Check className="h-3.5 w-3.5 text-primary" />}
                   </button>
-                  <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                  <div className="my-1 border-t border-border" />
                 </>
               )}
               {allowEmpty && multiple && (
                 <>
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted"
                     onClick={() => props.onChange([])}
                   >
                     {emptyLabel || placeholder}
-                    {props.value.length === 0 && <Check className="h-3.5 w-3.5 text-sky-600" />}
+                    {props.value.length === 0 && <Check className="h-3.5 w-3.5 text-primary" />}
                   </button>
-                  <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                  <div className="my-1 border-t border-border" />
                 </>
               )}
               {filtered.length === 0 && (
-                <div className="px-3 py-2 text-sm text-slate-400">Ничего не найдено</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">Ничего не найдено</div>
               )}
               {filtered.map((option, index) => {
                 const rowIndex = allowEmpty && !multiple ? index + 1 : index
@@ -419,15 +419,15 @@ export function Dropdown(props: DropdownProps) {
                 return (
                   <div key={option.value}>
                     {showFavoriteDivider && (
-                      <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+                      <div className="my-1 border-t border-border" />
                     )}
                     <button
                       type="button"
                       role="option"
                       aria-selected={checked}
                       className={cn(
-                        'group flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800',
-                        (active || checked) && 'bg-sky-50 text-sky-900 dark:bg-sky-950 dark:text-sky-200',
+                        'group flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted',
+                        (active || checked) && 'bg-accent text-accent-foreground',
                         isFavorite && 'transition-transform duration-200',
                       )}
                       onMouseEnter={() => setActiveIndex(rowIndex)}
@@ -441,8 +441,8 @@ export function Dropdown(props: DropdownProps) {
                           className={cn(
                             'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
                             checked
-                              ? 'border-sky-600 bg-sky-600 text-white'
-                              : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-950',
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-input bg-background',
                           )}
                         >
                           {checked && <Check className="h-3 w-3" />}
@@ -451,7 +451,7 @@ export function Dropdown(props: DropdownProps) {
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{option.label}</span>
                         {option.description && option.description !== option.label && (
-                          <span className="block truncate text-[11px] text-slate-500 dark:text-slate-400">
+                          <span className="block truncate text-[11px] text-muted-foreground">
                             {option.description}
                           </span>
                         )}
@@ -465,7 +465,7 @@ export function Dropdown(props: DropdownProps) {
                             'mt-0.5 shrink-0 rounded p-0.5 transition',
                             isFavorite
                               ? 'text-amber-500'
-                              : 'text-slate-400 opacity-0 group-hover:opacity-100 hover:text-amber-500',
+                              : 'text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber-500',
                           )}
                           onClick={(event) => {
                             event.preventDefault()
@@ -486,7 +486,7 @@ export function Dropdown(props: DropdownProps) {
                         </span>
                       )}
                       {!multiple && checked && (
-                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600" />
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
                       )}
                     </button>
                   </div>
@@ -494,15 +494,15 @@ export function Dropdown(props: DropdownProps) {
               })}
             </div>
             {onCreate && (
-              <div className="border-t border-slate-100 p-1.5 dark:border-slate-800">
+              <div className="border-t border-border p-1.5">
                 <button
                   type="button"
                   disabled={!canCreate}
                   className={cn(
                     'flex w-full items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium',
                     canCreate
-                      ? 'bg-sky-600 text-white hover:bg-sky-700'
-                      : 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500',
+                      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                      : 'cursor-not-allowed bg-muted text-muted-foreground',
                   )}
                   onClick={create}
                 >

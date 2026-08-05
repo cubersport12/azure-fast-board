@@ -48,8 +48,8 @@ export const WorkItemCard = memo(function WorkItemCard({
   return (
     <div
       className={cn(
-        'w-full min-w-0 cursor-grab rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm active:cursor-grabbing dark:border-slate-700 dark:bg-slate-900',
-        dragging ? 'opacity-40 ring-2 ring-sky-400' : 'hover:border-sky-300 hover:shadow dark:hover:border-sky-700',
+        'w-full min-w-0 cursor-grab rounded-lg border border-border bg-card p-3 text-left shadow-sm active:cursor-grabbing',
+        dragging ? 'opacity-40 ring-2 ring-ring' : 'hover:border-ring/40 hover:shadow-md',
         compact && 'p-2.5',
       )}
       style={{ touchAction: 'none' }}
@@ -77,7 +77,7 @@ export const WorkItemCard = memo(function WorkItemCard({
         <div className="mb-2 flex min-w-0 items-start gap-2">
           <span className={cn('mt-1 h-2.5 w-2.5 shrink-0 rounded-full', workItemColor(item.type))} />
           <div className="min-w-0 flex-1">
-            <div className="whitespace-normal break-words text-sm font-medium text-slate-900 [overflow-wrap:anywhere] dark:text-slate-100">
+            <div className="whitespace-normal break-words text-sm font-medium text-foreground [overflow-wrap:anywhere]">
               {item.title}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
@@ -137,7 +137,7 @@ export const WorkItemCard = memo(function WorkItemCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1">
             {item.tags.slice(0, 3).map((tag) => (
-              <Badge key={tag}>{tag}</Badge>
+              <Badge key={tag} variant="secondary">{tag}</Badge>
             ))}
           </div>
           <span className="shrink-0 text-[11px] text-slate-400">{formatRelative(item.changedDate)}</span>

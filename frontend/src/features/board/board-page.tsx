@@ -108,16 +108,16 @@ const Column = memo(function Column({
   return (
     <div
       ref={setNodeRef}
-      className={`flex min-w-0 flex-1 flex-col rounded-xl border bg-slate-50/80 dark:bg-slate-900/80 ${
-        isOver ? 'border-sky-400 bg-sky-50/40 dark:bg-sky-950/40' : 'border-slate-200 dark:border-slate-700'
+      className={`flex min-w-0 flex-1 flex-col rounded-xl border bg-muted/40 ${
+        isOver ? 'border-ring bg-accent/30' : 'border-border'
       }`}
     >
-      <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-700">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+          <div className="truncate text-sm font-semibold text-foreground">
             {column.name}
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400">{items.length} эл.</div>
+          <div className="text-[11px] text-muted-foreground">{items.length} эл.</div>
         </div>
         <Button size="icon" variant="ghost" onClick={onAdd} title="Быстрое создание">
           <Plus className="h-4 w-4" />
@@ -291,7 +291,7 @@ export function BoardPage() {
   const onDragCancel = () => setActive(null)
 
   if (isLoading) {
-    return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Загрузка доски…</div>
+    return <div className="p-6 text-sm text-muted-foreground">Загрузка доски…</div>
   }
 
   return (
@@ -302,7 +302,7 @@ export function BoardPage() {
         onChange={setFilters}
         trailing={<BoardCardPresetBar />}
       />
-      <div className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} карточек</div>
+      <div className="text-sm text-muted-foreground">{filtered.length} карточек</div>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}

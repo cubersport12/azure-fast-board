@@ -366,9 +366,9 @@ export function WorkItemFilterBar({
     list.map((value) => ({ value, label: formatOptionLabel(value) }))
 
   return (
-    <div className="w-full rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+    <div className="w-full rounded-xl border border-border bg-card p-3 text-card-foreground shadow-sm">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium text-slate-800 dark:text-slate-100">Фильтры</div>
+        <div className="text-sm font-medium">Фильтры</div>
         <div className="flex flex-wrap items-center gap-2">
           <FilterPresetDropdown
             filters={normalizedFilters}

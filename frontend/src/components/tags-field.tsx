@@ -101,12 +101,12 @@ export function TagsField({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((tag) => (
-            <Badge key={tag} className="gap-1 pr-1">
+            <Badge key={tag} variant="secondary" className="gap-1 pr-1">
               {tag}
               <button
                 type="button"
                 disabled={disabled}
-                className="rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700"
+                className="rounded-full p-0.5 hover:bg-muted"
                 aria-label={`Удалить тэг ${tag}`}
                 onClick={() => remove(tag)}
               >
@@ -122,7 +122,7 @@ export function TagsField({
         type="button"
         disabled={disabled}
         className={cn(
-          'flex h-9 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 text-left text-sm dark:border-slate-700 dark:bg-slate-950',
+          'flex h-8 w-full items-center justify-between rounded-lg border border-input bg-background px-2.5 text-left text-sm',
           disabled && 'opacity-60',
         )}
         onClick={() => {
@@ -130,7 +130,7 @@ export function TagsField({
           setOpen((v) => !v)
         }}
       >
-        <span className="text-slate-500 dark:text-slate-400">{placeholder}</span>
+        <span className="text-muted-foreground">{placeholder}</span>
         <Plus className="h-3.5 w-3.5 opacity-60" />
       </button>
 
@@ -138,7 +138,7 @@ export function TagsField({
         createPortal(
           <div
             ref={panelRef}
-            className="z-[10050] overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-950"
+            className="z-[10050] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
             style={{
               position: 'fixed',
               top: pos.top,
@@ -146,10 +146,10 @@ export function TagsField({
               width: Math.max(pos.width, 220),
             }}
           >
-            <div className="border-b border-slate-100 p-2 dark:border-slate-800">
+            <div className="border-b border-border p-2">
               <input
                 autoFocus
-                className="h-8 w-full rounded border border-slate-200 bg-transparent px-2 text-sm outline-none dark:border-slate-700"
+                className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                 value={query}
                 placeholder="Поиск или новый тэг…"
                 onChange={(e) => setQuery(e.target.value)}
@@ -167,7 +167,7 @@ export function TagsField({
                 <button
                   key={tag}
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-900"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted"
                   onClick={() => add(tag)}
                 >
                   <Check className="h-3.5 w-3.5 opacity-0" />
@@ -175,18 +175,18 @@ export function TagsField({
                 </button>
               ))}
               {filtered.length === 0 && !canCreate && (
-                <div className="px-3 py-2 text-sm text-slate-400">Нет вариантов</div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">Нет вариантов</div>
               )}
             </div>
-            <div className="border-t border-slate-100 p-2 dark:border-slate-800">
+            <div className="border-t border-border p-2">
               <button
                 type="button"
                 disabled={!canCreate}
                 className={cn(
                   'flex w-full items-center justify-center gap-1 rounded-md px-2 py-1.5 text-sm font-medium',
                   canCreate
-                    ? 'bg-sky-600 text-white hover:bg-sky-700'
-                    : 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-900',
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                    : 'cursor-not-allowed bg-muted text-muted-foreground',
                 )}
                 onClick={() => canCreate && add(query)}
               >
