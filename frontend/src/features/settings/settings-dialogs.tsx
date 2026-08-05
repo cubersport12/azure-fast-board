@@ -151,7 +151,7 @@ export function SettingsDialog() {
               checked={notifications.onlyAssignedToMe}
               onChange={(e) => patchNotifications({ onlyAssignedToMe: e.target.checked })}
             />
-            Только мои work item / назначения мне
+            Только мои work item (не касается создания)
           </label>
 
           <div className="space-y-1">

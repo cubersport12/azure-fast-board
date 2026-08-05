@@ -41,7 +41,10 @@ export class NotificationService {
   private currentUserDisplayName?: string
   private currentProjectId?: string
   private history: BoardNotification[] = []
+  /** Service lifecycle — true while start() is active. */
   private running = false
+  /** In-flight poll mutex (must not reuse `running`). */
+  private polling = false
   private ws = new NotificationsWsClient()
   private wsConnected = false
   private seenEventIds = new Set<string>()
@@ -152,6 +155,7 @@ export class NotificationService {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     this.running = false
+    this.polling = false
     this.ws.stop()
     this.wsConnected = false
   }
@@ -315,7 +319,9 @@ export class NotificationService {
       return
     }
 
-    if (settings.notifications.onlyAssignedToMe) {
+    // Creates are board-wide activity: "Создание work item" already gates them.
+    // onlyAssignedToMe still applies to updates / comments / assignments.
+    if (settings.notifications.onlyAssignedToMe && eventTypeRaw !== 'workitem.created') {
       const mine = isEventAssignedToMe(
         event,
         this.currentUserUniqueName,
@@ -363,7 +369,7 @@ export class NotificationService {
   }
 
   private async poll() {
-    if (this.running) return
+    if (!this.running || this.polling) return
     const settings = getSettings()
     if (!settings.notifications.enabled) return
 
@@ -373,7 +379,7 @@ export class NotificationService {
     const client = this.getClient()
     if (!client) return
 
-    this.running = true
+    this.polling = true
     try {
       await this.ensureIdentity(client)
       await this.ensureProjectId(client)
@@ -410,7 +416,7 @@ export class NotificationService {
     } catch (error) {
       console.warn('[notifications] poll failed', error)
     } finally {
-      this.running = false
+      this.polling = false
     }
   }
 

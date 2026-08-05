@@ -335,6 +335,19 @@ export function WorkItemDetailPage() {
     return data.state ? [data.state] : []
   }, [data, types, workItemType])
 
+  const typeOptions = useMemo(() => {
+    const mapped = types.map((entry) => ({ value: entry.name, label: entry.name }))
+    if (workItemType && !mapped.some((entry) => entry.value === workItemType)) {
+      mapped.push({ value: workItemType, label: workItemType })
+    }
+    return mapped
+  }, [types, workItemType])
+
+  const stateOptions = useMemo(
+    () => availableStates.map((state) => ({ value: state, label: state })),
+    [availableStates],
+  )
+
   const addComment = useMutation({
     mutationFn: (text: string) =>
       requireAzureApi().addComment({
@@ -561,41 +574,32 @@ export function WorkItemDetailPage() {
             {/* Type selector */}
             <div className="flex items-center gap-1.5">
               <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', workItemColor(activeType))} />
-              <select
-                className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+              <Dropdown
+                id="work-item-detail-type"
                 value={activeType}
-                disabled={update.isPending || types.length === 0}
-                onChange={(event) => {
-                  setWorkItemType(event.target.value)
+                options={typeOptions}
+                onChange={(next) => {
+                  setWorkItemType(next)
                   setDirty(true)
                 }}
-                aria-label="Тип рабочего элемента"
-              >
-                {types.map((entry) => (
-                  <option key={entry.name} value={entry.name}>
-                    {entry.name}
-                  </option>
-                ))}
-                {workItemType && !types.some((entry) => entry.name === workItemType) && (
-                  <option value={workItemType}>{workItemType}</option>
-                )}
-              </select>
+                searchable={false}
+                allowEmpty={false}
+                disabled={update.isPending || typeOptions.length === 0}
+                className="w-36"
+              />
             </div>
 
             {/* State selector */}
-            <select
-              className="h-8 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-ring"
+            <Dropdown
+              id="work-item-detail-state"
               value={data.state}
-              disabled={update.isPending || availableStates.length === 0}
-              onChange={(event) => void changeState(event.target.value)}
-              aria-label="Состояние"
-            >
-              {availableStates.map((state) => (
-                <option key={state} value={state}>
-                  {state}
-                </option>
-              ))}
-            </select>
+              options={stateOptions}
+              onChange={(next) => void changeState(next)}
+              searchable={false}
+              allowEmpty={false}
+              disabled={update.isPending || stateOptions.length === 0}
+              className="w-40"
+            />
           </div>
 
           {/* Right Header Actions */}
