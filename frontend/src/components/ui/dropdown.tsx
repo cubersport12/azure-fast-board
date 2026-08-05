@@ -1,6 +1,7 @@
 import { Check, ChevronDown, Search, Star } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { AppSettings, SelectFavoriteOption } from '../../../shared/types'
 import { queryKeys, useSettings, useUpdateSettings } from '@/hooks/use-azure'
 import { cn } from '@/lib/utils'
@@ -188,14 +189,24 @@ export function Dropdown(props: DropdownProps) {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listId = useId()
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
   const {
     favorites,
     favoriteValues,
     toggleFavorite,
     enabled: favoritesEnabled,
   } = useDropdownFavorites(favoritesKey, options)
+
+  const updatePos = () => {
+    const el = triggerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+  }
 
   const rememberedOptions = useRef(new Map<string, DropdownOption>())
   useEffect(() => {
@@ -224,19 +235,33 @@ export function Dropdown(props: DropdownProps) {
     )
   }, [mergedOptions, query])
 
+  useLayoutEffect(() => {
+    if (!open) return
+    updatePos()
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (triggerRef.current?.contains(target)) return
+      if (panelRef.current?.contains(target)) return
+      if (rootRef.current?.contains(target)) return
+      setOpen(false)
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
     }
+    const onReposition = () => updatePos()
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', onReposition)
+    window.addEventListener('scroll', onReposition, true)
     return () => {
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', onReposition)
+      window.removeEventListener('scroll', onReposition, true)
     }
   }, [open])
 
@@ -307,6 +332,7 @@ export function Dropdown(props: DropdownProps) {
       {label && <div className="mb-1 text-xs font-medium text-muted-foreground">{label}</div>}
       <div className="relative">
         <button
+          ref={triggerRef}
           id={id}
           type="button"
           disabled={disabled}
@@ -326,192 +352,203 @@ export function Dropdown(props: DropdownProps) {
           <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition', open && 'rotate-180')} />
         </button>
 
-        {open && (
-          <div className="absolute z-40 mt-1 w-full overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
-            {searchable && (
-              <div className="flex items-center gap-2 border-b border-border px-2 py-1.5">
-                <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                <input
-                  ref={searchRef}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'ArrowDown') {
-                      event.preventDefault()
-                      setActiveIndex((index) => Math.min(index + 1, rows.length - 1))
-                    } else if (event.key === 'ArrowUp') {
-                      event.preventDefault()
-                      setActiveIndex((index) => Math.max(index - 1, 0))
-                    } else if (event.key === 'Enter') {
-                      event.preventDefault()
-                      if (canCreate && filtered.length === 0) {
-                        create()
-                        return
+        {open &&
+          createPortal(
+            <div
+              ref={panelRef}
+              className="z-[10050] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+              style={{
+                position: 'fixed',
+                top: pos.top,
+                left: pos.left,
+                width: Math.max(pos.width, 220),
+              }}
+            >
+              {searchable && (
+                <div className="flex items-center gap-2 border-b border-border px-2 py-1.5">
+                  <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    ref={searchRef}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        setActiveIndex((index) => Math.min(index + 1, rows.length - 1))
+                      } else if (event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        setActiveIndex((index) => Math.max(index - 1, 0))
+                      } else if (event.key === 'Enter') {
+                        event.preventDefault()
+                        if (canCreate && filtered.length === 0) {
+                          create()
+                          return
+                        }
+                        const row = rows[activeIndex]
+                        if (!row) return
+                        if (multiple) {
+                          if (row.value) toggleMulti(row.value)
+                        } else {
+                          chooseSingle(row.value)
+                        }
                       }
-                      const row = rows[activeIndex]
-                      if (!row) return
-                      if (multiple) {
-                        if (row.value) toggleMulti(row.value)
-                      } else {
-                        chooseSingle(row.value)
-                      }
-                    }
-                  }}
-                  placeholder={searchPlaceholder}
-                  className="h-7 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                />
-              </div>
-            )}
-            <div id={listId} role="listbox" className="max-h-60 overflow-auto py-1">
-              {suggestionsLabel && filtered.length > 0 && (
-                <div className="px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {suggestionsLabel}
+                    }}
+                    placeholder={searchPlaceholder}
+                    className="h-7 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                  />
                 </div>
               )}
-              {allowEmpty && !multiple && (
-                <>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={!props.value}
-                    className={cn(
-                      'flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted',
-                      activeIndex === 0 && 'bg-muted',
-                    )}
-                    onMouseEnter={() => setActiveIndex(0)}
-                    onClick={() => chooseSingle('')}
-                  >
-                    {emptyLabel}
-                    {!props.value && <Check className="h-3.5 w-3.5 text-primary" />}
-                  </button>
-                  <div className="my-1 border-t border-border" />
-                </>
-              )}
-              {allowEmpty && multiple && (
-                <>
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted"
-                    onClick={() => props.onChange([])}
-                  >
-                    {emptyLabel || placeholder}
-                    {props.value.length === 0 && <Check className="h-3.5 w-3.5 text-primary" />}
-                  </button>
-                  <div className="my-1 border-t border-border" />
-                </>
-              )}
-              {filtered.length === 0 && (
-                <div className="px-3 py-2 text-sm text-muted-foreground">Ничего не найдено</div>
-              )}
-              {filtered.map((option, index) => {
-                const rowIndex = allowEmpty && !multiple ? index + 1 : index
-                const active = activeIndex === rowIndex
-                const checked = multiple
-                  ? props.value.includes(option.value)
-                  : option.value === props.value
-                const isFavorite = favoriteValues.includes(option.value)
-                const showFavoriteDivider =
-                  favoritesEnabled &&
-                  favoriteCount > 0 &&
-                  index === favoriteCount &&
-                  !query.trim()
-
-                return (
-                  <div key={option.value}>
-                    {showFavoriteDivider && (
-                      <div className="my-1 border-t border-border" />
-                    )}
+              <div id={listId} role="listbox" className="max-h-60 overflow-auto py-1">
+                {suggestionsLabel && filtered.length > 0 && (
+                  <div className="px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {suggestionsLabel}
+                  </div>
+                )}
+                {allowEmpty && !multiple && (
+                  <>
                     <button
                       type="button"
                       role="option"
-                      aria-selected={checked}
+                      aria-selected={!props.value}
                       className={cn(
-                        'group flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted',
-                        (active || checked) && 'bg-accent text-accent-foreground',
-                        isFavorite && 'transition-transform duration-200',
+                        'flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted',
+                        activeIndex === 0 && 'bg-muted',
                       )}
-                      onMouseEnter={() => setActiveIndex(rowIndex)}
-                      onClick={() => {
-                        if (multiple) toggleMulti(option.value)
-                        else chooseSingle(option.value)
-                      }}
+                      onMouseEnter={() => setActiveIndex(0)}
+                      onClick={() => chooseSingle('')}
                     >
-                      {multiple && (
-                        <span
-                          className={cn(
-                            'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                            checked
-                              ? 'border-primary bg-primary text-primary-foreground'
-                              : 'border-input bg-background',
-                          )}
-                        >
-                          {checked && <Check className="h-3 w-3" />}
-                        </span>
+                      {emptyLabel}
+                      {!props.value && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                    <div className="my-1 border-t border-border" />
+                  </>
+                )}
+                {allowEmpty && multiple && (
+                  <>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted"
+                      onClick={() => props.onChange([])}
+                    >
+                      {emptyLabel || placeholder}
+                      {props.value.length === 0 && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                    <div className="my-1 border-t border-border" />
+                  </>
+                )}
+                {filtered.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">Ничего не найдено</div>
+                )}
+                {filtered.map((option, index) => {
+                  const rowIndex = allowEmpty && !multiple ? index + 1 : index
+                  const active = activeIndex === rowIndex
+                  const checked = multiple
+                    ? props.value.includes(option.value)
+                    : option.value === props.value
+                  const isFavorite = favoriteValues.includes(option.value)
+                  const showFavoriteDivider =
+                    favoritesEnabled &&
+                    favoriteCount > 0 &&
+                    index === favoriteCount &&
+                    !query.trim()
+
+                  return (
+                    <div key={option.value}>
+                      {showFavoriteDivider && (
+                        <div className="my-1 border-t border-border" />
                       )}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{option.label}</span>
-                        {option.description && option.description !== option.label && (
-                          <span className="block truncate text-[11px] text-muted-foreground">
-                            {option.description}
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={checked}
+                        className={cn(
+                          'group flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted',
+                          (active || checked) && 'bg-accent text-accent-foreground',
+                          isFavorite && 'transition-transform duration-200',
+                        )}
+                        onMouseEnter={() => setActiveIndex(rowIndex)}
+                        onClick={() => {
+                          if (multiple) toggleMulti(option.value)
+                          else chooseSingle(option.value)
+                        }}
+                      >
+                        {multiple && (
+                          <span
+                            className={cn(
+                              'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                              checked
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-input bg-background',
+                            )}
+                          >
+                            {checked && <Check className="h-3 w-3" />}
                           </span>
                         )}
-                      </span>
-                      {favoritesEnabled && (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          aria-label={isFavorite ? 'Убрать из избранного' : 'В избранное'}
-                          className={cn(
-                            'mt-0.5 shrink-0 rounded p-0.5 transition',
-                            isFavorite
-                              ? 'text-amber-500'
-                              : 'text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber-500',
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{option.label}</span>
+                          {option.description && option.description !== option.label && (
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {option.description}
+                            </span>
                           )}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            toggleFavorite(option)
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
+                        </span>
+                        {favoritesEnabled && (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            aria-label={isFavorite ? 'Убрать из избранного' : 'В избранное'}
+                            className={cn(
+                              'mt-0.5 shrink-0 rounded p-0.5 transition',
+                              isFavorite
+                                ? 'text-amber-500'
+                                : 'text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber-500',
+                            )}
+                            onClick={(event) => {
                               event.preventDefault()
                               event.stopPropagation()
                               toggleFavorite(option)
-                            }
-                          }}
-                        >
-                          <Star
-                            className={cn('h-3.5 w-3.5', isFavorite && 'fill-current')}
-                          />
-                        </span>
-                      )}
-                      {!multiple && checked && (
-                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                      )}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-            {onCreate && (
-              <div className="border-t border-border p-1.5">
-                <button
-                  type="button"
-                  disabled={!canCreate}
-                  className={cn(
-                    'flex w-full items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium',
-                    canCreate
-                      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                      : 'cursor-not-allowed bg-muted text-muted-foreground',
-                  )}
-                  onClick={create}
-                >
-                  {createLabel}
-                </button>
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                toggleFavorite(option)
+                              }
+                            }}
+                          >
+                            <Star
+                              className={cn('h-3.5 w-3.5', isFavorite && 'fill-current')}
+                            />
+                          </span>
+                        )}
+                        {!multiple && checked && (
+                          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                        )}
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
-            )}
-          </div>
-        )}
+              {onCreate && (
+                <div className="border-t border-border p-1.5">
+                  <button
+                    type="button"
+                    disabled={!canCreate}
+                    className={cn(
+                      'flex w-full items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium',
+                      canCreate
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                        : 'cursor-not-allowed bg-muted text-muted-foreground',
+                    )}
+                    onClick={create}
+                  >
+                    {createLabel}
+                  </button>
+                </div>
+              )}
+            </div>,
+            document.body,
+          )}
       </div>
     </div>
   )

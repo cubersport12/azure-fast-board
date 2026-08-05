@@ -1,14 +1,32 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ExternalLink, Save, Send } from 'lucide-react'
-import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
+import {
+  ArrowLeft,
+  Calendar,
+  Check,
+  Clock,
+  Copy,
+  ExternalLink,
+  FileText,
+  Flag,
+  Folder,
+  Layers,
+  MessageSquare,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Send,
+  Tag,
+  User,
+} from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthenticatedHtml } from '@/components/authenticated-media'
 import { RichTextEditor, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Button } from '@/components/ui/button'
-import { Input, Label } from '@/components/ui/primitives'
+import { Badge, Card, Input, Label } from '@/components/ui/primitives'
 import { Dropdown } from '@/components/ui/dropdown'
 import { TagsField } from '@/components/tags-field'
+import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
 import {
   queryKeys,
   useAreaPaths,
@@ -49,13 +67,22 @@ function bodyFieldForType(type: string) {
   return /bug/i.test(type) ? ADO_FIELD_REPRO_STEPS : ADO_FIELD_DESCRIPTION
 }
 
+function getInitials(name?: string) {
+  if (!name) return '?'
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  }
+  return name.slice(0, 2).toUpperCase()
+}
+
 export function WorkItemDetailPage() {
   const { id = '' } = useParams()
   const workItemId = Number(id)
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const highlightCommentId = Number(searchParams.get('commentId') || '')
-  const { data, isLoading, refetch } = useWorkItem(workItemId)
+  const { data, isLoading, refetch, isRefetching } = useWorkItem(workItemId)
   const { data: types = [] } = useWorkItemTypes()
   const { data: settings } = useSettings()
   const { data: connection } = useConnection()
@@ -66,6 +93,7 @@ export function WorkItemDetailPage() {
   const update = useUpdateWorkItem()
   const qc = useQueryClient()
   const markReadByWorkItemId = useNotificationsStore((s) => s.markReadByWorkItemId)
+
   const [title, setTitle] = useState('')
   /** null = show server body; string = user/editor draft */
   const [bodyHtml, setBodyHtml] = useState<string | null>(null)
@@ -84,6 +112,7 @@ export function WorkItemDetailPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [savingBody, setSavingBody] = useState(false)
   const [activeHighlightCommentId, setActiveHighlightCommentId] = useState<number | null>(null)
+  const [copiedId, setCopiedId] = useState(false)
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
   const areas = areaPaths?.areas ?? []
@@ -91,7 +120,6 @@ export function WorkItemDetailPage() {
   const bodyField = bodyFieldForType(workItemType || data?.type || '')
   const isReproBody = bodyField === ADO_FIELD_REPRO_STEPS
   const serverBodyHtml = isReproBody ? (data?.reproSteps ?? '') : (data?.description ?? '')
-  // Never feed the editor an empty string while server still has ReproSteps HTML.
   const displayBodyHtml =
     dirty && bodyHtml != null && htmlPlainText(bodyHtml).length > 0
       ? bodyHtml
@@ -235,7 +263,7 @@ export function WorkItemDetailPage() {
       clearTimer = window.setTimeout(() => {
         setActiveHighlightCommentId((current) => (current === targetId ? null : current))
         setSearchParams(
-          (prev) => {
+          (prev: URLSearchParams) => {
             const next = new URLSearchParams(prev)
             next.delete('commentId')
             return next
@@ -363,6 +391,7 @@ export function WorkItemDetailPage() {
   const serverTags = (data?.tags ?? []).join('; ')
   const draftTags = tags.join('; ')
   const serverPriority = data?.priority != null ? String(data.priority) : ''
+
   const canSaveBody =
     dirty &&
     (title.trim() !== (data?.title ?? '') ||
@@ -374,6 +403,20 @@ export function WorkItemDetailPage() {
       priority !== serverPriority ||
       workItemType !== (data?.type || ''))
 
+  const handleCancel = () => {
+    if (!data) return
+    setTitle(data.title)
+    setBodyHtml(null)
+    setIterationPath(data.iterationPath || '')
+    setAreaPath(data.areaPath || '')
+    setAssignedTo(data.assignedToUniqueName || data.assignedTo || '')
+    setTags(data.tags ?? [])
+    setPriority(data.priority != null ? String(data.priority) : '')
+    setWorkItemType(data.type || '')
+    setDirty(false)
+    setStatus(null)
+  }
+
   const saveBody = async () => {
     if (!data || !canSaveBody) return
     setSavingBody(true)
@@ -384,9 +427,6 @@ export function WorkItemDetailPage() {
         fields['System.Title'] = title.trim()
       }
 
-      // Only touch Description/ReproSteps when the user actually edited the body.
-      // Otherwise Area/Assignee/… saves re-PATCHed HTML from the editor (often
-      // without restored img srcs) and the cleanup below deleted every attachment.
       let bodySkippedImages = false
       const bodyChanged = bodyHtml != null && draftBody !== serverBodyHtml
       if (bodyChanged) {
@@ -398,7 +438,6 @@ export function WorkItemDetailPage() {
             [...nextUrls].some((entry) => mediaUrlsMatch(entry, url)),
           )
         if (!keptAnyImage) {
-          // TipTap/hydration dropped remote srcs — keep server HTML, still save other fields.
           bodySkippedImages = true
         } else {
           for (const url of previousUrls) {
@@ -447,7 +486,6 @@ export function WorkItemDetailPage() {
         return
       }
 
-      // Re-read rev after possible attachment removals.
       const fresh = await requireAzureApi().getWorkItem(workItemId)
       await update.mutateAsync({
         id: data.id,
@@ -457,7 +495,7 @@ export function WorkItemDetailPage() {
       setDirty(false)
       setStatus(
         bodySkippedImages
-          ? 'Сохранено (описание не трогали — пропали src картинок в редакторе)'
+          ? 'Сохранено (описание не обновлено — пропали картинки)'
           : 'Сохранено',
       )
       await qc.invalidateQueries({ queryKey: queryKeys.workItem(workItemId) })
@@ -490,77 +528,197 @@ export function WorkItemDetailPage() {
     }
   }
 
-  if (isLoading || !data) {
-    return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Загрузка рабочего элемента…</div>
+  const copyId = () => {
+    if (!data) return
+    void navigator.clipboard.writeText(String(data.id))
+    setCopiedId(true)
+    setTimeout(() => setCopiedId(false), 2000)
   }
 
-  return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4" /> Назад
-        </Button>
-        <span className={cn('h-2.5 w-2.5 rounded-full', workItemColor(workItemType || data.type))} />
-        <select
-          className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-          value={workItemType || data.type}
-          disabled={update.isPending || types.length === 0}
-          onChange={(event) => {
-            setWorkItemType(event.target.value)
-            setDirty(true)
-          }}
-          aria-label="Тип"
-        >
-          {types.map((entry) => (
-            <option key={entry.name} value={entry.name}>
-              {entry.name}
-            </option>
-          ))}
-          {workItemType && !types.some((entry) => entry.name === workItemType) && (
-            <option value={workItemType}>{workItemType}</option>
-          )}
-        </select>
-        <select
-          className="h-8 rounded-md border border-sky-200 bg-sky-50 px-2 text-sm font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
-          value={data.state}
-          disabled={update.isPending || availableStates.length === 0}
-          onChange={(event) => void changeState(event.target.value)}
-          aria-label="Состояние"
-        >
-          {availableStates.map((state) => (
-            <option key={state} value={state}>
-              {state}
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-slate-500 dark:text-slate-400">#{data.id}</span>
-        <SendToMattermostButton workItemId={data.id} />
-        <Button variant="secondary" size="sm" onClick={() => void openAzure()} title="Открыть в Azure">
-          <ExternalLink className="h-4 w-4" />
-          Azure
-        </Button>
-        {status && <span className="text-xs text-emerald-600 dark:text-emerald-400">{status}</span>}
+  if (isLoading || !data) {
+    return (
+      <div className="flex h-64 items-center justify-center p-6 text-sm text-muted-foreground">
+        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+        Загрузка рабочего элемента #{workItemId}…
       </div>
+    )
+  }
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr]">
-        <div className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <Input
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value)
-                setDirty(true)
-              }}
-              className="border-0 px-0 text-xl font-semibold shadow-none focus-visible:ring-0 dark:bg-transparent"
-            />
-            <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-              Обновлено {formatRelative(data.changedDate)}
-              {data.createdBy ? ` · Автор ${data.createdBy}` : ''}
+  const activeType = workItemType || data.type
+
+  return (
+    <div className="flex min-h-full flex-col bg-muted/20">
+      {/* Sticky Action Header */}
+      <header className="sticky top-0 z-20 border-b border-border bg-card/95 px-4 py-2.5 shadow-xs backdrop-blur-xs">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+          {/* Left Navigation & Identifiers */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5 text-xs">
+              <ArrowLeft className="h-3.5 w-3.5" /> Назад
+            </Button>
+            <div className="h-4 w-px bg-border" />
+
+            {/* Type selector */}
+            <div className="flex items-center gap-1.5">
+              <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', workItemColor(activeType))} />
+              <select
+                className="h-8 rounded-lg border border-input bg-transparent px-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-ring"
+                value={activeType}
+                disabled={update.isPending || types.length === 0}
+                onChange={(event) => {
+                  setWorkItemType(event.target.value)
+                  setDirty(true)
+                }}
+                aria-label="Тип рабочего элемента"
+              >
+                {types.map((entry) => (
+                  <option key={entry.name} value={entry.name}>
+                    {entry.name}
+                  </option>
+                ))}
+                {workItemType && !types.some((entry) => entry.name === workItemType) && (
+                  <option value={workItemType}>{workItemType}</option>
+                )}
+              </select>
             </div>
-            <div className="mt-4 space-y-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                {isReproBody ? 'Шаги воспроизведения' : 'Описание'}
+
+            {/* State selector */}
+            <select
+              className="h-8 rounded-lg border border-primary/30 bg-primary/10 px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-ring"
+              value={data.state}
+              disabled={update.isPending || availableStates.length === 0}
+              onChange={(event) => void changeState(event.target.value)}
+              aria-label="Состояние"
+            >
+              {availableStates.map((state) => (
+                <option key={state} value={state}>
+                  {state}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Right Header Actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            {status && (
+              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 animate-fade-in">
+                {status}
+              </span>
+            )}
+
+            {/* Work Item ID Badge */}
+            <Button
+              className="ml-auto"
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={copyId}
+              title="Скопировать ID"
+            >
+              {copiedId ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+              {copiedId ? 'Скопировано' : `#${data.id}`}
+            </Button>
+
+            {canSaveBody && (
+              <div className="flex items-center gap-1.5 bg-amber-500/10 dark:bg-amber-500/20 px-2 py-1 rounded-lg border border-amber-500/30">
+                <span className="text-xs font-medium text-amber-700 dark:text-amber-300 hidden sm:inline">
+                  Есть изменения
+                </span>
+                <Button variant="ghost" size="xs" onClick={handleCancel} title="Сбросить несохранённые изменения">
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  Отмена
+                </Button>
+                <Button
+                  size="xs"
+                  disabled={savingBody}
+                  onClick={() => void saveBody()}
+                  className="bg-primary text-primary-foreground font-medium shadow-xs"
+                >
+                  <Save className="h-3.5 w-3.5 mr-1" />
+                  {savingBody ? 'Сохранение…' : 'Сохранить'}
+                </Button>
               </div>
+            )}
+
+            <SendToMattermostButton workItemId={data.id} />
+
+            <Button variant="outline" size="sm" onClick={() => void openAzure()} title="Открыть в Azure DevOps" className="gap-1.5 text-xs">
+              <ExternalLink className="h-3.5 w-3.5" />
+              Azure
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void refetch()}
+              disabled={isRefetching}
+              title="Обновить данные карточки"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', isRefetching && 'animate-spin')} />
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Grid Content */}
+      <div className="mx-auto flex w-full max-w-7xl flex-1 p-4 md:p-6">
+        <div className="grid w-full gap-6 lg:grid-cols-12">
+          {/* Main Column (Title, Description, Discussion) */}
+          <div className="space-y-6 lg:col-span-8">
+            {/* Title & Metadata Card */}
+            <Card className="p-5 shadow-xs border-border bg-card">
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="work-item-detail-title" className="text-xs text-muted-foreground">
+                    Название
+                  </Label>
+                  <Input
+                    id="work-item-detail-title"
+                    value={title}
+                    onChange={(e) => {
+                      setTitle(e.target.value)
+                      setDirty(true)
+                    }}
+                    placeholder="Введите название…"
+                    className="h-auto min-h-11 py-2.5 text-lg font-semibold md:text-xl"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground border-t border-border/50 pt-3">
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3.5 w-3.5 opacity-70" />
+                    Изменено {formatRelative(data.changedDate)}
+                  </span>
+                  {data.createdBy && (
+                    <span className="inline-flex items-center gap-1">
+                      <User className="h-3.5 w-3.5 opacity-70" />
+                      Автор: <strong className="font-medium text-foreground/90">{data.createdBy}</strong>
+                    </span>
+                  )}
+                  {data.createdDate && (
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5 opacity-70" />
+                      Создано {formatRelative(data.createdDate)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </Card>
+
+            {/* Description / Repro Steps Card */}
+            <Card className="p-5 shadow-xs border-border bg-card space-y-4">
+              <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                    {isReproBody ? 'Шаги воспроизведения' : 'Описание'}
+                  </h2>
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  Поддерживается форматирование и вставка скриншотов (Ctrl+V)
+                </span>
+              </div>
+
               <RichTextEditor
                 key={String(workItemId)}
                 value={displayBodyHtml}
@@ -574,184 +732,263 @@ export function WorkItemDetailPage() {
                 onUploadImage={onBodyUpload}
                 placeholder={
                   isReproBody
-                    ? 'Steps to Reproduce… Ctrl+V — скриншот'
-                    : 'Текст описания… Ctrl+V — скриншот'
+                    ? 'Опишите шаги для воспроизведения бага… Ctrl+V для вставки скриншота'
+                    : 'Текст описания задачи… Ctrl+V для вставки скриншота'
                 }
-                minHeight={180}
+                minHeight={200}
                 data-composer="body"
               />
-              <div className="flex justify-end">
-                <Button disabled={!canSaveBody || savingBody} onClick={() => void saveBody()}>
-                  <Save className="h-4 w-4" />
-                  {savingBody ? 'Сохранение…' : 'Сохранить'}
-                </Button>
+
+              {/* {canSaveBody && (
+                <div className="flex justify-end pt-2">
+                  <Button disabled={savingBody} onClick={() => void saveBody()} size="sm">
+                    <Save className="h-4 w-4 mr-1.5" />
+                    {savingBody ? 'Сохранение…' : 'Сохранить изменения'}
+                  </Button>
+                </div>
+              )} */}
+            </Card>
+
+            {/* Discussion / Comments Card */}
+            <Card id="wi-discussion" className="p-5 shadow-xs border-border bg-card space-y-5">
+              <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-semibold tracking-tight text-foreground">Обсуждение</h2>
+                  <Badge variant="secondary" className="text-[11px] px-1.5 py-0">
+                    {data.comments.length}
+                  </Badge>
+                </div>
               </div>
-            </div>
+
+              {/* Comment History List */}
+              <div className="space-y-3.5 max-h-112 overflow-y-auto pr-1">
+                {data.comments.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-border/80 p-6 text-center text-xs text-muted-foreground">
+                    Комментариев пока нет. Напишите первый комментарий ниже.
+                  </div>
+                )}
+                {data.comments.map((entry) => (
+                  <div
+                    key={entry.id}
+                    id={`wi-comment-${entry.id}`}
+                    className={cn(
+                      'rounded-xl border p-4 transition-all duration-300',
+                      activeHighlightCommentId === entry.id
+                        ? 'border-amber-400/80 bg-amber-500/10 ring-2 ring-amber-400/50'
+                        : 'border-border/60 bg-muted/20 hover:bg-muted/40',
+                    )}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                          {getInitials(entry.createdBy)}
+                        </div>
+                        <span className="truncate text-xs font-semibold text-foreground">
+                          {entry.createdBy}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
+                        {formatRelative(entry.createdDate)}
+                      </span>
+                    </div>
+
+                    <AuthenticatedHtml
+                      className="max-w-none text-xs text-foreground/90 leading-relaxed [&_img]:mt-2 [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:border [&_img]:border-border [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                      html={renderCommentHtml(entry.text)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* New Comment Composer */}
+              <div className="space-y-2 border-t border-border/60 pt-4">
+                <Label className="text-xs font-medium text-foreground">Новый комментарий</Label>
+                <RichTextEditor
+                  value={comment}
+                  onChange={setComment}
+                  onUploadImage={onCommentUpload}
+                  placeholder="Написать комментарий… Вставляйте скриншоты по Ctrl+V"
+                  minHeight={96}
+                  data-composer="comment"
+                />
+                <div className="flex justify-end pt-1">
+                  <Button
+                    size="sm"
+                    disabled={!canSendComment || addComment.isPending}
+                    onClick={() => addComment.mutate(comment)}
+                  >
+                    <Send className="h-3.5 w-3.5 mr-1.5" />
+                    {addComment.isPending ? 'Отправка…' : 'Отправить'}
+                  </Button>
+                </div>
+              </div>
+            </Card>
           </div>
 
-          <div
-            id="wi-discussion"
-            className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
-          >
-            <div className="mb-3">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Обсуждение</h3>
-            </div>
-            <div className="mb-4 max-h-80 space-y-3 overflow-y-auto">
-              {data.comments.length === 0 && (
-                <div className="text-sm text-slate-500 dark:text-slate-400">Комментариев пока нет.</div>
-              )}
-              {data.comments.map((entry) => (
-                <div
-                  key={entry.id}
-                  id={`wi-comment-${entry.id}`}
-                  className={cn(
-                    'rounded-lg border p-3 transition-colors duration-500',
-                    activeHighlightCommentId === entry.id
-                      ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-300 dark:border-amber-500 dark:bg-amber-950/50 dark:ring-amber-700'
-                      : 'border-slate-100 bg-slate-50 dark:border-slate-700 dark:bg-slate-950',
-                  )}
-                >
-                  <div className="mb-1 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                    <span className="font-medium text-slate-700 dark:text-slate-200">{entry.createdBy}</span>
-                    <span>{formatRelative(entry.createdDate)}</span>
-                  </div>
-                  <AuthenticatedHtml
-                    className="max-w-none text-sm text-slate-800 dark:text-slate-200 [&_img]:mt-2 [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:border [&_img]:border-slate-200 dark:[&_img]:border-slate-700 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
-                    html={renderCommentHtml(entry.text)}
+          {/* Sidebar / Right Column (Properties & Meta) */}
+          <div className="space-y-6 lg:col-span-4">
+            {/* Properties Card */}
+            <Card className="p-5 shadow-xs border-border bg-card space-y-4">
+              <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+                <Layers className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold tracking-tight text-foreground">Поля и атрибуты</h3>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                {/* Assignee */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="work-item-detail-assignee" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <User className="h-3.5 w-3.5 text-primary/70" /> Исполнитель
+                  </Label>
+                  <Dropdown
+                    id="work-item-detail-assignee"
+                    favoritesKey="work-item-detail-assignee"
+                    value={assignedTo}
+                    options={assigneeOptions}
+                    onChange={(next) => {
+                      setAssignedTo(next)
+                      setDirty(true)
+                    }}
+                    onSearch={onAssigneeSearch}
+                    placeholder={searching ? 'Поиск…' : 'Не назначен'}
+                    emptyLabel="Не назначен"
+                    searchPlaceholder="Поиск исполнителя…"
+                    allowEmpty
                   />
                 </div>
-              ))}
-            </div>
-            <div className="space-y-2">
-              <RichTextEditor
-                value={comment}
-                onChange={setComment}
-                onUploadImage={onCommentUpload}
-                placeholder="Написать комментарий… Ctrl+V — скриншот"
-                minHeight={96}
-                data-composer="comment"
-              />
-              <div className="flex justify-end">
-                <Button
-                  disabled={!canSendComment || addComment.isPending}
-                  onClick={() => addComment.mutate(comment)}
-                >
-                  <Send className="h-4 w-4" />
-                  {addComment.isPending ? 'Отправка…' : 'Отправить'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <h3 className="mb-3 text-sm font-semibold">Поля</h3>
-            <div className="space-y-3 text-sm">
-              <div className="space-y-1">
-                <Label htmlFor="work-item-detail-area">Область</Label>
-                <Dropdown
-                  id="work-item-detail-area"
-                  favoritesKey="work-item-detail-area"
-                  value={
-                    !areaPath || (rootPath && areaPath.toLowerCase() === rootPath.toLowerCase())
-                      ? ''
-                      : areaPath
-                  }
-                  options={areas
-                    .filter(
-                      (area) =>
-                        !rootPath || area.path.toLowerCase() !== rootPath.toLowerCase(),
-                    )
-                    .map((area) => ({
-                      value: area.path,
-                      label: area.name,
-                    }))}
-                  onChange={(next) => {
-                    setAreaPath(next || rootPath || '')
-                    setDirty(true)
-                  }}
-                  placeholder="Не указано"
-                  emptyLabel="Не указано"
-                  searchPlaceholder="Поиск Area…"
-                  allowEmpty
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="work-item-detail-iteration">Итерация</Label>
-                <Dropdown
-                  id="work-item-detail-iteration"
-                  favoritesKey="work-item-detail-iteration"
-                  value={iterationPath}
-                  options={iterationOptions}
-                  onChange={(next) => {
-                    setIterationPath(next)
-                    setDirty(true)
-                  }}
-                  placeholder="Не выбрано"
-                  emptyLabel="Не выбрано"
-                  searchPlaceholder="Поиск итерации…"
-                  suggestionsLabel="Suggestions"
-                  allowEmpty
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="work-item-detail-assignee">Исполнитель</Label>
-                <Dropdown
-                  id="work-item-detail-assignee"
-                  favoritesKey="work-item-detail-assignee"
-                  value={assignedTo}
-                  options={assigneeOptions}
-                  onChange={(next) => {
-                    setAssignedTo(next)
-                    setDirty(true)
-                  }}
-                  onSearch={onAssigneeSearch}
-                  placeholder={searching ? 'Поиск…' : 'Не назначен'}
-                  emptyLabel="Не назначен"
-                  searchPlaceholder="Поиск исполнителя…"
-                  allowEmpty
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="work-item-detail-priority">Приоритет</Label>
-                <select
-                  id="work-item-detail-priority"
-                  className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  value={priority}
-                  onChange={(event) => {
-                    setPriority(event.target.value)
-                    setDirty(true)
-                  }}
-                >
-                  <option value="">Не указано</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label>Теги</Label>
-                <TagsField
-                  id="work-item-detail-tags"
-                  value={tags}
-                  options={knownTags}
-                  onChange={onTagsChange}
-                />
-              </div>
-              <div className="flex justify-between gap-3 pt-1 text-slate-500 dark:text-slate-400">
-                <span>Колонка доски</span>
-                <span className="text-slate-900 dark:text-slate-100">
-                  {data.boardColumn || data.state}
-                </span>
-              </div>
-            </div>
-          </div>
+                {/* Priority */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="work-item-detail-priority" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Flag className="h-3.5 w-3.5 text-primary/70" /> Приоритет
+                  </Label>
+                  <Dropdown
+                    id="work-item-detail-priority"
+                    value={priority}
+                    options={[
+                      { value: '1', label: '1 — Высочайший (P1)' },
+                      { value: '2', label: '2 — Высокий (P2)' },
+                      { value: '3', label: '3 — Средний (P3)' },
+                      { value: '4', label: '4 — Низкий (P4)' },
+                    ]}
+                    onChange={(next) => {
+                      setPriority(next)
+                      setDirty(true)
+                    }}
+                    placeholder="Не указано"
+                    emptyLabel="Не указано"
+                    searchable={false}
+                    allowEmpty
+                  />
+                </div>
 
-          <Button variant="secondary" onClick={() => void refetch()}>
-            Обновить
-          </Button>
+                {/* Area */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="work-item-detail-area" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Folder className="h-3.5 w-3.5 text-primary/70" /> Область (Area)
+                  </Label>
+                  <Dropdown
+                    id="work-item-detail-area"
+                    favoritesKey="work-item-detail-area"
+                    value={
+                      !areaPath || (rootPath && areaPath.toLowerCase() === rootPath.toLowerCase())
+                        ? ''
+                        : areaPath
+                    }
+                    options={areas
+                      .filter(
+                        (area) =>
+                          !rootPath || area.path.toLowerCase() !== rootPath.toLowerCase(),
+                      )
+                      .map((area) => ({
+                        value: area.path,
+                        label: area.name,
+                      }))}
+                    onChange={(next) => {
+                      setAreaPath(next || rootPath || '')
+                      setDirty(true)
+                    }}
+                    placeholder="Не указано"
+                    emptyLabel="Не указано"
+                    searchPlaceholder="Поиск Area…"
+                    allowEmpty
+                  />
+                </div>
+
+                {/* Iteration */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="work-item-detail-iteration" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Calendar className="h-3.5 w-3.5 text-primary/70" /> Итерация (Sprint)
+                  </Label>
+                  <Dropdown
+                    id="work-item-detail-iteration"
+                    favoritesKey="work-item-detail-iteration"
+                    value={iterationPath}
+                    options={iterationOptions}
+                    onChange={(next) => {
+                      setIterationPath(next)
+                      setDirty(true)
+                    }}
+                    placeholder="Не выбрано"
+                    emptyLabel="Не выбрано"
+                    searchPlaceholder="Поиск итерации…"
+                    suggestionsLabel="Suggestions"
+                    allowEmpty
+                  />
+                </div>
+
+                {/* Tags */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Tag className="h-3.5 w-3.5 text-primary/70" /> Теги
+                  </Label>
+                  <TagsField
+                    id="work-item-detail-tags"
+                    value={tags}
+                    options={knownTags}
+                    onChange={onTagsChange}
+                  />
+                </div>
+              </div>
+            </Card>
+
+            {/* Meta Info Card */}
+            <Card className="p-5 shadow-xs border-border bg-card space-y-3">
+              <h4 className="text-xs font-semibold text-foreground/80 uppercase tracking-wider">
+                Системная информация
+              </h4>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between items-center py-1 border-b border-border/40">
+                  <span className="text-muted-foreground">Колонка доски</span>
+                  <Badge variant="outline" className="font-medium text-[11px]">
+                    {data.boardColumn || data.state}
+                  </Badge>
+                </div>
+
+                <div className="flex justify-between items-center py-1 border-b border-border/40">
+                  <span className="text-muted-foreground">Создано</span>
+                  <span className="font-medium text-foreground">
+                    {data.createdDate ? formatRelative(data.createdDate) : '—'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center py-1 border-b border-border/40">
+                  <span className="text-muted-foreground">Автор</span>
+                  <span className="font-medium text-foreground">
+                    {data.createdBy || '—'}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-muted-foreground">Обновлено</span>
+                  <span className="font-medium text-foreground">
+                    {data.changedDate ? formatRelative(data.changedDate) : '—'}
+                  </span>
+                </div>
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
