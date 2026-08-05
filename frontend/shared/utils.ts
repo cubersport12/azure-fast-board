@@ -46,6 +46,28 @@ export function normalizeIterationFieldPath(path?: string | null, project?: stri
   return stripClassificationSegment(path, 'Iteration', project)
 }
 
+/** Browser URL for a work item in Azure DevOps / TFS web UI. */
+export function buildWorkItemWebUrl(
+  connection: { serverUrl: string; collection: string; project: string },
+  workItemId: number,
+): string {
+  const server = connection.serverUrl.replace(/\/+$/, '')
+  const collection = connection.collection.replace(/^\/+|\/+$/g, '')
+  const project = connection.project
+    .split('/')
+    .map((part) => encodeURIComponent(part))
+    .join('/')
+  return `${server}/${collection}/${project}/_workitems/edit/${workItemId}`
+}
+
+/** Replace last segment of an iteration field path after rename. */
+export function replaceIterationPathLeaf(path: string, newName: string): string {
+  const parts = path.split('\\').filter(Boolean)
+  if (!parts.length) return newName.trim()
+  parts[parts.length - 1] = newName.trim()
+  return parts.join('\\')
+}
+
 /**
  * Classification nodes use `Project\Area\Team`, but System.AreaPath
  * expects `Project\Team` (structural "Area" node stripped).

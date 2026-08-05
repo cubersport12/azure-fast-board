@@ -1,8 +1,11 @@
 import Store from 'electron-store'
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_BOARD_CARD_PRESET,
+  DEFAULT_BOARD_CARD_PRESET_ID,
   DEFAULT_SETTINGS,
   type AppSettings,
+  type BoardCardFieldPreset,
   type BoardNotification,
   type ConnectionConfig,
   type NotificationSettings,
@@ -107,6 +110,41 @@ function normalizeFilterPresets(raw: unknown): StoredFilterPreset[] {
   return out
 }
 
+const BOARD_CARD_FIELD_IDS = new Set([
+  'status',
+  'priority',
+  'assignee',
+  'createdBy',
+  'createdDate',
+  'area',
+  'comments',
+  'description',
+])
+
+function normalizeBoardCardFieldPresets(raw: unknown): BoardCardFieldPreset[] {
+  let defaultFields = DEFAULT_BOARD_CARD_PRESET.fields
+  const out: BoardCardFieldPreset[] = []
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!entry || typeof entry !== 'object') continue
+      const id = String((entry as BoardCardFieldPreset).id || '').trim()
+      const name = String((entry as BoardCardFieldPreset).name || '').trim()
+      if (!id || !name) continue
+      const fields = Array.isArray((entry as BoardCardFieldPreset).fields)
+        ? (entry as BoardCardFieldPreset).fields.filter((f) =>
+            BOARD_CARD_FIELD_IDS.has(f as BoardCardFieldPreset['fields'][number]),
+          )
+        : []
+      if (id === DEFAULT_BOARD_CARD_PRESET_ID) {
+        if (fields.length) defaultFields = fields
+        continue
+      }
+      out.push({ id, name, fields })
+    }
+  }
+  return [{ ...DEFAULT_BOARD_CARD_PRESET, fields: defaultFields }, ...out]
+}
+
 /** Accepts legacy `string[]` favorites and normalizes to labeled options. */
 function normalizeSelectFavorites(
   raw: Record<string, unknown> | undefined,
@@ -158,6 +196,9 @@ export function getSettings() {
       tags: settings.filters?.tags ?? [],
     },
     filterPresets: normalizeFilterPresets(settings.filterPresets),
+    boardCardFieldPresets: normalizeBoardCardFieldPresets(settings.boardCardFieldPresets),
+    activeBoardCardFieldPresetId:
+      String(settings.activeBoardCardFieldPresetId || '').trim() || DEFAULT_BOARD_CARD_PRESET_ID,
     selectFavorites: normalizeSelectFavorites(
       settings.selectFavorites as Record<string, unknown> | undefined,
     ),
@@ -185,6 +226,13 @@ export function updateSettings(patch: Partial<AppSettings>) {
   }
   if (patch.filterPresets) {
     next.filterPresets = normalizeFilterPresets(patch.filterPresets)
+  }
+  if (patch.boardCardFieldPresets) {
+    next.boardCardFieldPresets = normalizeBoardCardFieldPresets(patch.boardCardFieldPresets)
+  }
+  if (patch.activeBoardCardFieldPresetId !== undefined) {
+    next.activeBoardCardFieldPresetId =
+      String(patch.activeBoardCardFieldPresetId || '').trim() || DEFAULT_BOARD_CARD_PRESET_ID
   }
   if (patch.selectFavorites) {
     next.selectFavorites = {

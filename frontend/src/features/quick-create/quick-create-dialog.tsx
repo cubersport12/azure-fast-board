@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Dropdown } from '@/components/ui/dropdown'
-import { Badge, Dialog, Input, Label } from '@/components/ui/primitives'
+import { TagsField } from '@/components/tags-field'
+import { Dialog, Input, Label } from '@/components/ui/primitives'
 import {
   useAreaPaths,
   useAssignees,
@@ -73,6 +73,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const [iterationPath, setIterationPath] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [extraTags, setExtraTags] = useState<string[]>([])
+  const [priority, setPriority] = useState('')
   const [people, setPeople] = useState<AssigneeIdentity[]>([])
   const [searching, setSearching] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -93,27 +94,19 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     return [...new Set([...fromItems, ...extraTags])].sort((a, b) => a.localeCompare(b))
   }, [workItems, extraTags])
 
-  const tagOptions = useMemo(
-    () =>
-      knownTags
-        .filter((tag) => !tags.some((selected) => selected.toLowerCase() === tag.toLowerCase()))
-        .map((tag) => ({ value: tag, label: tag })),
-    [knownTags, tags],
-  )
-
-  const addTag = useCallback((tag: string) => {
-    const next = tag.trim()
-    if (!next) return
-    setTags((current) =>
-      current.some((entry) => entry.toLowerCase() === next.toLowerCase())
-        ? current
-        : [...current, next],
-    )
-    setExtraTags((current) =>
-      current.some((entry) => entry.toLowerCase() === next.toLowerCase())
-        ? current
-        : [...current, next],
-    )
+  const onTagsChange = useCallback((next: string[]) => {
+    setTags(next)
+    setExtraTags((current) => {
+      const merged = new Set(current.map((t) => t.toLowerCase()))
+      const out = [...current]
+      for (const tag of next) {
+        if (!merged.has(tag.toLowerCase())) {
+          out.push(tag)
+          merged.add(tag.toLowerCase())
+        }
+      }
+      return out
+    })
   }, [])
 
   const defaultAssignee = useMemo(() => settings?.lastAssignee ?? '', [settings?.lastAssignee])
@@ -148,6 +141,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       setIterationPath(selectedIteration)
       setTags([])
       setExtraTags([])
+      setPriority('')
       setType(types.find((entry) => entry.name === 'Bug')?.name || types[0]?.name || 'Bug')
       setPeople(teamAssignees)
       setSubmitting(false)
@@ -228,14 +222,15 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       const textOnly = stripBlobImages(html).trim()
       const hasBody = !isRichTextEmpty(textOnly) || extractBlobSrcs(html).length > 0
 
+      const extraFields: Record<string, string | number | boolean | null> = {}
+      if (bugBody && textOnly) extraFields[ADO_FIELD_REPRO_STEPS] = textOnly
+      if (priority) extraFields['Microsoft.VSTS.Common.Priority'] = Number(priority)
+
       const created = await create.mutateAsync({
         type,
         title: title.trim(),
         description: !bugBody && textOnly ? textOnly : undefined,
-        fields:
-          bugBody && textOnly
-            ? { [ADO_FIELD_REPRO_STEPS]: textOnly }
-            : undefined,
+        fields: Object.keys(extraFields).length ? extraFields : undefined,
         assignedTo: nextAssignee || undefined,
         areaPath: areaPath.trim() || undefined,
         iterationPath: iterationPath.trim() || undefined,
@@ -316,13 +311,28 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
                     value: area.path,
                     label: area.name,
                   }))}
-                onChange={(next) => setAreaPath(next || rootPath)}
+                onChange={(next) => setAreaPath(next || rootPath || '')}
                 placeholder="Не указано"
                 emptyLabel="Не указано"
                 searchPlaceholder="Поиск Area…"
                 suggestionsLabel="Suggestions"
                 allowEmpty
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="quick-create-priority">Приоритет</Label>
+              <select
+                id="quick-create-priority"
+                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+              >
+                <option value="">Не указано</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
             </div>
             <div className="space-y-1 col-span-2">
               <Label htmlFor="quick-create-iteration">Итерация</Label>
@@ -355,39 +365,13 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
               />
             </div>
             <div className="space-y-1 col-span-2">
-              <Label htmlFor="quick-create-tags">Тэг</Label>
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pb-1">
-                  {tags.map((tag) => (
-                    <Badge key={tag} className="gap-1 pr-1">
-                      {tag}
-                      <button
-                        type="button"
-                        className="rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700"
-                        aria-label={`Удалить тэг ${tag}`}
-                        onClick={() => setTags((current) => current.filter((entry) => entry !== tag))}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              <Dropdown
+              <Label htmlFor="quick-create-tags">Тэги</Label>
+              <TagsField
                 id="quick-create-tags"
-                favoritesKey="quick-create-tags"
-                value=""
-                options={tagOptions}
-                onChange={(next) => {
-                  if (next) addTag(next)
-                }}
-                onCreate={addTag}
+                value={tags}
+                options={knownTags}
+                onChange={onTagsChange}
                 placeholder="Добавить тэг"
-                emptyLabel="Без тэга"
-                searchPlaceholder="Поиск тэга…"
-                suggestionsLabel="Suggestions"
-                createLabel="Создать новый тэг"
-                allowEmpty={false}
               />
             </div>
           </div>

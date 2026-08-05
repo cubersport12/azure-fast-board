@@ -490,6 +490,13 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       throw toIpcError(error)
     }
   })
+  ipcMain.handle(IPC_CHANNELS.renameIteration, async (_e, path: string, newName: string) => {
+    try {
+      return await requireClient().renameIteration(String(path || ''), String(newName || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
 
   ipcMain.handle(IPC_CHANNELS.viewsList, () => getViews())
   ipcMain.handle(IPC_CHANNELS.viewsSave, (_e, view: SavedView) => saveView(view))

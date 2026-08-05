@@ -1,33 +1,49 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Save, Send } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Save, Send } from 'lucide-react'
 import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthenticatedHtml } from '@/components/authenticated-media'
 import { RichTextEditor, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Button } from '@/components/ui/button'
-import { Badge, Input } from '@/components/ui/primitives'
+import { Input, Label } from '@/components/ui/primitives'
 import { Dropdown } from '@/components/ui/dropdown'
+import { TagsField } from '@/components/tags-field'
 import {
   queryKeys,
+  useAreaPaths,
+  useAssignees,
+  useConnection,
   useIterationPaths,
   useSettings,
   useUpdateWorkItem,
   useWorkItem,
+  useWorkItems,
   useWorkItemTypes,
 } from '@/hooks/use-azure'
 import { getAzureApi, requireAzureApi } from '@/lib/azure-api'
 import { renderCommentHtml } from '@/lib/clipboard-image'
 import { descriptionImageUrls, mediaUrlsMatch } from '@/lib/html-text'
 import { notificationBelongsToWorkItem } from '@/lib/notification-route'
+import { uniqueOptions } from '@/lib/work-item-filters'
 import { cn, formatRelative, workItemColor } from '@/lib/utils'
 import { useNotificationsStore } from '@/stores/notifications-store'
 import {
   ADO_FIELD_DESCRIPTION,
   ADO_FIELD_REPRO_STEPS,
+  type AssigneeIdentity,
   type AttachmentUpload,
   type BoardNotification,
+  type WorkItem,
 } from '../../../shared/types'
+import { buildWorkItemWebUrl } from '../../../shared/utils'
+
+const EMPTY_ASSIGNEES: AssigneeIdentity[] = []
+const EMPTY_WORK_ITEMS: WorkItem[] = []
+
+function assigneeValue(person: AssigneeIdentity) {
+  return person.uniqueName || person.displayName
+}
 
 function bodyFieldForType(type: string) {
   return /bug/i.test(type) ? ADO_FIELD_REPRO_STEPS : ADO_FIELD_DESCRIPTION
@@ -42,7 +58,11 @@ export function WorkItemDetailPage() {
   const { data, isLoading, refetch } = useWorkItem(workItemId)
   const { data: types = [] } = useWorkItemTypes()
   const { data: settings } = useSettings()
+  const { data: connection } = useConnection()
   const { data: iterationPaths } = useIterationPaths()
+  const { data: areaPaths } = useAreaPaths()
+  const { data: teamAssignees = EMPTY_ASSIGNEES } = useAssignees()
+  const { data: workItems = EMPTY_WORK_ITEMS } = useWorkItems()
   const update = useUpdateWorkItem()
   const qc = useQueryClient()
   const markReadByWorkItemId = useNotificationsStore((s) => s.markReadByWorkItemId)
@@ -50,6 +70,15 @@ export function WorkItemDetailPage() {
   /** null = show server body; string = user/editor draft */
   const [bodyHtml, setBodyHtml] = useState<string | null>(null)
   const [iterationPath, setIterationPath] = useState('')
+  const [areaPath, setAreaPath] = useState('')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [extraTags, setExtraTags] = useState<string[]>([])
+  const [priority, setPriority] = useState('')
+  const [workItemType, setWorkItemType] = useState('')
+  const [people, setPeople] = useState<AssigneeIdentity[]>([])
+  const [searching, setSearching] = useState(false)
+  const searchTimer = useRef<number | null>(null)
   const [comment, setComment] = useState('')
   const [dirty, setDirty] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
@@ -57,7 +86,9 @@ export function WorkItemDetailPage() {
   const [activeHighlightCommentId, setActiveHighlightCommentId] = useState<number | null>(null)
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
-  const bodyField = data ? bodyFieldForType(data.type) : ADO_FIELD_DESCRIPTION
+  const areas = areaPaths?.areas ?? []
+  const rootPath = areaPaths?.rootPath || connection?.project || ''
+  const bodyField = bodyFieldForType(workItemType || data?.type || '')
   const isReproBody = bodyField === ADO_FIELD_REPRO_STEPS
   const serverBodyHtml = isReproBody ? (data?.reproSteps ?? '') : (data?.description ?? '')
   // Never feed the editor an empty string while server still has ReproSteps HTML.
@@ -65,6 +96,67 @@ export function WorkItemDetailPage() {
     dirty && bodyHtml != null && htmlPlainText(bodyHtml).length > 0
       ? bodyHtml
       : serverBodyHtml
+
+  useEffect(() => {
+    setPeople(teamAssignees)
+  }, [teamAssignees])
+
+  const knownTags = useMemo(() => {
+    const fromItems = uniqueOptions(workItems).tags
+    const fromItem = data?.tags ?? []
+    return [...new Set([...fromItems, ...fromItem, ...extraTags])].sort((a, b) =>
+      a.localeCompare(b),
+    )
+  }, [workItems, data?.tags, extraTags])
+
+  const onTagsChange = useCallback((next: string[]) => {
+    setTags(next)
+    setExtraTags((current) => {
+      const merged = new Set(current.map((t) => t.toLowerCase()))
+      for (const tag of next) {
+        if (!merged.has(tag.toLowerCase())) current = [...current, tag]
+      }
+      return current
+    })
+    setDirty(true)
+  }, [])
+
+  const onAssigneeSearch = useCallback(
+    (query: string) => {
+      if (searchTimer.current) window.clearTimeout(searchTimer.current)
+      const q = query.trim()
+      if (!q) {
+        setPeople(teamAssignees)
+        setSearching(false)
+        return
+      }
+      setSearching(true)
+      searchTimer.current = window.setTimeout(() => {
+        void requireAzureApi()
+          .searchAssignees(q)
+          .then((results) => {
+            setPeople(results.length ? results : teamAssignees)
+          })
+          .catch(() => {
+            setPeople(teamAssignees)
+          })
+          .finally(() => setSearching(false))
+      }, 250)
+    },
+    [teamAssignees],
+  )
+
+  const assigneeOptions = useMemo(() => {
+    const mapped = people.map((person) => ({
+      value: assigneeValue(person),
+      label: person.displayName,
+      hint: person.uniqueName,
+    }))
+    if (assignedTo && !mapped.some((o) => o.value === assignedTo || o.label === assignedTo)) {
+      mapped.unshift({ value: assignedTo, label: assignedTo, hint: assignedTo })
+    }
+    return mapped
+  }, [people, assignedTo])
 
   // Opening a card means the user has seen related notifications — mark them read.
   useEffect(() => {
@@ -99,6 +191,12 @@ export function WorkItemDetailPage() {
     setBodyHtml(null)
     setTitle('')
     setIterationPath('')
+    setAreaPath('')
+    setAssignedTo('')
+    setTags([])
+    setExtraTags([])
+    setPriority('')
+    setWorkItemType('')
     setComment('')
     setStatus(null)
   }, [workItemId])
@@ -108,6 +206,11 @@ export function WorkItemDetailPage() {
     setTitle(data.title)
     setBodyHtml(null)
     setIterationPath(data.iterationPath || '')
+    setAreaPath(data.areaPath || '')
+    setAssignedTo(data.assignedToUniqueName || data.assignedTo || '')
+    setTags(data.tags ?? [])
+    setPriority(data.priority != null ? String(data.priority) : '')
+    setWorkItemType(data.type || '')
   }, [data, dirty, serverBodyHtml])
 
   useEffect(() => {
@@ -195,13 +298,14 @@ export function WorkItemDetailPage() {
 
   const availableStates = useMemo(() => {
     if (!data) return [] as string[]
-    const typeInfo = types.find((entry) => entry.name === data.type)
+    const typeName = workItemType || data.type
+    const typeInfo = types.find((entry) => entry.name === typeName)
     const fromType = typeInfo?.states.map((entry) => entry.name) ?? []
     if (fromType.length) {
       return fromType.includes(data.state) ? fromType : [data.state, ...fromType]
     }
     return data.state ? [data.state] : []
-  }, [data, types])
+  }, [data, types, workItemType])
 
   const addComment = useMutation({
     mutationFn: (text: string) =>
@@ -255,35 +359,92 @@ export function WorkItemDetailPage() {
 
   const canSendComment = !isRichTextEmpty(comment)
   const draftBody = bodyHtml ?? serverBodyHtml
+  const serverAssignee = (data?.assignedToUniqueName || data?.assignedTo || '').trim()
+  const serverTags = (data?.tags ?? []).join('; ')
+  const draftTags = tags.join('; ')
+  const serverPriority = data?.priority != null ? String(data.priority) : ''
   const canSaveBody =
     dirty &&
     (title.trim() !== (data?.title ?? '') ||
-      draftBody !== serverBodyHtml ||
-      iterationPath !== (data?.iterationPath || ''))
+      (bodyHtml != null && draftBody !== serverBodyHtml) ||
+      iterationPath !== (data?.iterationPath || '') ||
+      areaPath !== (data?.areaPath || '') ||
+      assignedTo.trim() !== serverAssignee ||
+      draftTags !== serverTags ||
+      priority !== serverPriority ||
+      workItemType !== (data?.type || ''))
 
   const saveBody = async () => {
     if (!data || !canSaveBody) return
     setSavingBody(true)
     try {
-      const previousUrls = descriptionImageUrls(serverBodyHtml)
-      const nextUrls = descriptionImageUrls(draftBody)
-      for (const url of previousUrls) {
-        if ([...nextUrls].some((entry) => mediaUrlsMatch(entry, url))) continue
-        try {
-          await requireAzureApi().removeAttachment(workItemId, url)
-        } catch {
-          // Continue saving even if relation cleanup fails.
+      const fields: Record<string, string | number | boolean | null | undefined> = {}
+
+      if (title.trim() !== (data.title ?? '')) {
+        fields['System.Title'] = title.trim()
+      }
+
+      // Only touch Description/ReproSteps when the user actually edited the body.
+      // Otherwise Area/Assignee/… saves re-PATCHed HTML from the editor (often
+      // without restored img srcs) and the cleanup below deleted every attachment.
+      let bodySkippedImages = false
+      const bodyChanged = bodyHtml != null && draftBody !== serverBodyHtml
+      if (bodyChanged) {
+        const previousUrls = descriptionImageUrls(serverBodyHtml)
+        const nextUrls = descriptionImageUrls(draftBody)
+        const keptAnyImage =
+          previousUrls.size === 0 ||
+          [...previousUrls].some((url) =>
+            [...nextUrls].some((entry) => mediaUrlsMatch(entry, url)),
+          )
+        if (!keptAnyImage) {
+          // TipTap/hydration dropped remote srcs — keep server HTML, still save other fields.
+          bodySkippedImages = true
+        } else {
+          for (const url of previousUrls) {
+            if ([...nextUrls].some((entry) => mediaUrlsMatch(entry, url))) continue
+            try {
+              await requireAzureApi().removeAttachment(workItemId, url)
+            } catch {
+              // Continue saving even if relation cleanup fails.
+            }
+          }
+          fields[bodyField] = draftBody
         }
       }
 
-      const fields: Record<string, string | number | boolean | null | undefined> = {
-        'System.Title': title.trim(),
-        [bodyField]: draftBody,
-      }
       const nextIteration = iterationPath.trim()
       const prevIteration = (data.iterationPath || '').trim()
       if (nextIteration !== prevIteration) {
         fields['System.IterationPath'] = nextIteration || null
+      }
+
+      const nextArea = areaPath.trim()
+      const prevArea = (data.areaPath || '').trim()
+      if (nextArea !== prevArea) {
+        fields['System.AreaPath'] =
+          !nextArea || (rootPath && nextArea.toLowerCase() === rootPath.toLowerCase())
+            ? rootPath || null
+            : nextArea
+      }
+
+      if (assignedTo.trim() !== serverAssignee) {
+        fields['System.AssignedTo'] = assignedTo.trim() || null
+      }
+      if (draftTags !== serverTags) {
+        fields['System.Tags'] = draftTags || null
+      }
+      if (priority !== serverPriority) {
+        fields['Microsoft.VSTS.Common.Priority'] = priority ? Number(priority) : null
+      }
+      if (workItemType && workItemType !== data.type) {
+        fields['System.WorkItemType'] = workItemType
+      }
+
+      if (!Object.keys(fields).length) {
+        setDirty(false)
+        setStatus('Нет изменений для сохранения')
+        return
       }
 
       // Re-read rev after possible attachment removals.
@@ -294,13 +455,25 @@ export function WorkItemDetailPage() {
         fields,
       })
       setDirty(false)
-      setStatus('Сохранено')
+      setStatus(
+        bodySkippedImages
+          ? 'Сохранено (описание не трогали — пропали src картинок в редакторе)'
+          : 'Сохранено',
+      )
       await qc.invalidateQueries({ queryKey: queryKeys.workItem(workItemId) })
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Не удалось сохранить')
     } finally {
       setSavingBody(false)
     }
+  }
+
+  const openAzure = async () => {
+    if (!connection || !data) return
+    const url = data.url?.includes('_workitems')
+      ? data.url
+      : buildWorkItemWebUrl(connection, data.id)
+    await getAzureApi()?.openExternal(url)
   }
 
   const changeState = async (state: string) => {
@@ -327,8 +500,26 @@ export function WorkItemDetailPage() {
         <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4" /> Назад
         </Button>
-        <span className={cn('h-2.5 w-2.5 rounded-full', workItemColor(data.type))} />
-        <Badge>{data.type}</Badge>
+        <span className={cn('h-2.5 w-2.5 rounded-full', workItemColor(workItemType || data.type))} />
+        <select
+          className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+          value={workItemType || data.type}
+          disabled={update.isPending || types.length === 0}
+          onChange={(event) => {
+            setWorkItemType(event.target.value)
+            setDirty(true)
+          }}
+          aria-label="Тип"
+        >
+          {types.map((entry) => (
+            <option key={entry.name} value={entry.name}>
+              {entry.name}
+            </option>
+          ))}
+          {workItemType && !types.some((entry) => entry.name === workItemType) && (
+            <option value={workItemType}>{workItemType}</option>
+          )}
+        </select>
         <select
           className="h-8 rounded-md border border-sky-200 bg-sky-50 px-2 text-sm font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
           value={data.state}
@@ -344,6 +535,10 @@ export function WorkItemDetailPage() {
         </select>
         <span className="text-xs text-slate-500 dark:text-slate-400">#{data.id}</span>
         <SendToMattermostButton workItemId={data.id} />
+        <Button variant="secondary" size="sm" onClick={() => void openAzure()} title="Открыть в Azure">
+          <ExternalLink className="h-4 w-4" />
+          Azure
+        </Button>
         {status && <span className="text-xs text-emerald-600 dark:text-emerald-400">{status}</span>}
       </div>
 
@@ -361,7 +556,6 @@ export function WorkItemDetailPage() {
             <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
               Обновлено {formatRelative(data.changedDate)}
               {data.createdBy ? ` · Автор ${data.createdBy}` : ''}
-              {` · Исполнитель ${data.assignedTo || 'Не назначен'}`}
             </div>
             <div className="mt-4 space-y-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -453,13 +647,38 @@ export function WorkItemDetailPage() {
         <div className="space-y-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
             <h3 className="mb-3 text-sm font-semibold">Поля</h3>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Область</dt>
-                <dd className="truncate text-right">{data.areaPath || '—'}</dd>
+            <div className="space-y-3 text-sm">
+              <div className="space-y-1">
+                <Label htmlFor="work-item-detail-area">Область</Label>
+                <Dropdown
+                  id="work-item-detail-area"
+                  favoritesKey="work-item-detail-area"
+                  value={
+                    !areaPath || (rootPath && areaPath.toLowerCase() === rootPath.toLowerCase())
+                      ? ''
+                      : areaPath
+                  }
+                  options={areas
+                    .filter(
+                      (area) =>
+                        !rootPath || area.path.toLowerCase() !== rootPath.toLowerCase(),
+                    )
+                    .map((area) => ({
+                      value: area.path,
+                      label: area.name,
+                    }))}
+                  onChange={(next) => {
+                    setAreaPath(next || rootPath || '')
+                    setDirty(true)
+                  }}
+                  placeholder="Не указано"
+                  emptyLabel="Не указано"
+                  searchPlaceholder="Поиск Area…"
+                  allowEmpty
+                />
               </div>
               <div className="space-y-1">
-                <div className="text-slate-500 dark:text-slate-400">Итерация</div>
+                <Label htmlFor="work-item-detail-iteration">Итерация</Label>
                 <Dropdown
                   id="work-item-detail-iteration"
                   favoritesKey="work-item-detail-iteration"
@@ -476,16 +695,58 @@ export function WorkItemDetailPage() {
                   allowEmpty
                 />
               </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-500 dark:text-slate-400">Колонка доски</dt>
-                <dd>{data.boardColumn || data.state}</dd>
+              <div className="space-y-1">
+                <Label htmlFor="work-item-detail-assignee">Исполнитель</Label>
+                <Dropdown
+                  id="work-item-detail-assignee"
+                  favoritesKey="work-item-detail-assignee"
+                  value={assignedTo}
+                  options={assigneeOptions}
+                  onChange={(next) => {
+                    setAssignedTo(next)
+                    setDirty(true)
+                  }}
+                  onSearch={onAssigneeSearch}
+                  placeholder={searching ? 'Поиск…' : 'Не назначен'}
+                  emptyLabel="Не назначен"
+                  searchPlaceholder="Поиск исполнителя…"
+                  allowEmpty
+                />
               </div>
-              <div className="flex flex-wrap gap-1 pt-2">
-                {data.tags.map((tag) => (
-                  <Badge key={tag}>{tag}</Badge>
-                ))}
+              <div className="space-y-1">
+                <Label htmlFor="work-item-detail-priority">Приоритет</Label>
+                <select
+                  id="work-item-detail-priority"
+                  className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  value={priority}
+                  onChange={(event) => {
+                    setPriority(event.target.value)
+                    setDirty(true)
+                  }}
+                >
+                  <option value="">Не указано</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
               </div>
-            </dl>
+              <div className="space-y-1">
+                <Label>Теги</Label>
+                <TagsField
+                  id="work-item-detail-tags"
+                  value={tags}
+                  options={knownTags}
+                  onChange={onTagsChange}
+                />
+              </div>
+              <div className="flex justify-between gap-3 pt-1 text-slate-500 dark:text-slate-400">
+                <span>Колонка доски</span>
+                <span className="text-slate-900 dark:text-slate-100">
+                  {data.boardColumn || data.state}
+                </span>
+              </div>
+            </div>
           </div>
 
           <Button variant="secondary" onClick={() => void refetch()}>

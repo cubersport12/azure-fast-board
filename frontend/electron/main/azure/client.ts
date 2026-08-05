@@ -19,7 +19,12 @@ import {
   type IterationPathsResult,
   type IterationPathOption,
 } from '../../../shared/types'
-import { parseTags, normalizeAreaFieldPath, normalizeIterationFieldPath } from '../../../shared/utils'
+import {
+  parseTags,
+  normalizeAreaFieldPath,
+  normalizeIterationFieldPath,
+  replaceIterationPathLeaf,
+} from '../../../shared/utils'
 import { AzureDevOpsError } from './errors'
 import { applyInsecureTls, azureFetch, formatNetworkError } from './http'
 
@@ -1292,21 +1297,13 @@ export class AzureClient {
 
     const project = this.connection.project
     let defaultPath: string | undefined
-    let teamRoots: Array<{ value: string; includeChildren: boolean }> = []
 
     try {
       const team = this.connection.team || project
       const teamFields = await this.request<{
         defaultValue?: string
-        values?: Array<{ value?: string; includeChildren?: boolean }>
       }>(this.api(`/${encodeURIComponent(team)}/_apis/work/teamsettings/teamfieldvalues`))
       defaultPath = normalizeAreaFieldPath(teamFields.defaultValue, project) || undefined
-      teamRoots = (teamFields.values ?? [])
-        .map((entry) => ({
-          value: normalizeAreaFieldPath(entry.value, project),
-          includeChildren: entry.includeChildren !== false,
-        }))
-        .filter((entry) => entry.value)
     } catch {
       // Fall back to full classification tree.
     }
@@ -1321,18 +1318,6 @@ export class AzureClient {
       areas = []
     }
 
-    if (teamRoots.length) {
-      const underTeam = areas.filter((area) => {
-        const path = area.path.toLowerCase()
-        return teamRoots.some((root) => {
-          const prefix = root.value.toLowerCase()
-          if (path === prefix) return true
-          return root.includeChildren && path.startsWith(`${prefix}\\`)
-        })
-      })
-      if (underTeam.length) areas = underTeam
-    }
-
     if (!areas.length && project) {
       areas = [{ path: project, name: project }]
     }
@@ -1340,12 +1325,7 @@ export class AzureClient {
     // Field root is the project (not structural Project\Area).
     const byPath = new Map(areas.map((area) => [area.path.toLowerCase(), area.path]))
     const projectNode = project ? byPath.get(project.toLowerCase()) : undefined
-    const rootPath =
-      projectNode ||
-      project ||
-      teamRoots.find((entry) => !entry.value.includes('\\'))?.value ||
-      teamRoots[0]?.value ||
-      areas[0]?.path
+    const rootPath = projectNode || project || areas[0]?.path
 
     const relativeName = (path: string) => {
       if (!rootPath) return path
@@ -1477,6 +1457,43 @@ export class AzureClient {
     })
 
     return { rootPath, iterations }
+  }
+
+  /**
+   * Rename an iteration node in ADO. `iterationPath` is System.IterationPath-style
+   * (Project\…). Returns the new field path + display name.
+   */
+  async renameIteration(
+    iterationPath: string,
+    newName: string,
+  ): Promise<{ path: string; name: string }> {
+    const name = newName.trim()
+    if (!name) throw new AzureDevOpsError('Укажите новое имя итерации', 400)
+    const project = this.connection.project
+    const normalized = normalizeIterationFieldPath(iterationPath, project)
+    if (!normalized) throw new AzureDevOpsError('Путь итерации не задан', 400)
+
+    let relative = normalized
+    if (project && normalized.toLowerCase().startsWith(`${project.toLowerCase()}\\`)) {
+      relative = normalized.slice(project.length + 1)
+    }
+    if (!relative) throw new AzureDevOpsError('Нельзя переименовать корень итераций', 400)
+
+    const apiPath = relative
+      .split('\\')
+      .map((part) => encodeURIComponent(part))
+      .join('/')
+    const raw = await this.request<{ name?: string; path?: string }>(
+      this.api(`/_apis/wit/classificationnodes/Iterations/${apiPath}`),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      },
+    )
+    const fromApi = normalizeIterationFieldPath(raw.path, project)
+    const path = fromApi || replaceIterationPathLeaf(normalized, name)
+    return { path, name: raw.name?.trim() || name }
   }
 
   async getWorkItemTypes(): Promise<WorkItemTypeInfo[]> {

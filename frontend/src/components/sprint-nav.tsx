@@ -1,14 +1,18 @@
-import { Plus, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { MoreVertical, Plus, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Dropdown } from '@/components/ui/dropdown'
-import { Dialog } from '@/components/ui/primitives'
+import { Dialog, Input, Label } from '@/components/ui/primitives'
 import {
+  queryKeys,
   useIterationPaths,
   useSettings,
   useUpdateSettings,
 } from '@/hooks/use-azure'
+import { requireAzureApi } from '@/lib/azure-api'
 import { cn } from '@/lib/utils'
+import { useQueryClient } from '@tanstack/react-query'
 import type { SubscribedIteration } from '../../shared/types'
 
 const EMPTY_SUBSCRIBED: SubscribedIteration[] = []
@@ -17,8 +21,16 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
   const { data: settings } = useSettings()
   const { data: iterationPaths } = useIterationPaths()
   const updateSettings = useUpdateSettings()
+  const qc = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [picked, setPicked] = useState('')
+  const [menuPath, setMenuPath] = useState<string | null>(null)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+  const [renameTarget, setRenameTarget] = useState<SubscribedIteration | null>(null)
+  const [renameName, setRenameName] = useState('')
+  const [renameBusy, setRenameBusy] = useState(false)
+  const [renameError, setRenameError] = useState('')
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const subscribed = settings?.subscribedIterations ?? EMPTY_SUBSCRIBED
   const selectedPath = settings?.selectedIterationPath ?? ''
@@ -36,6 +48,16 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
         description: iteration.path,
       }))
   }, [iterationPaths?.iterations, subscribed])
+
+  useEffect(() => {
+    if (!menuPath) return
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return
+      setMenuPath(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [menuPath])
 
   const persist = (patch: {
     subscribedIterations?: SubscribedIteration[]
@@ -81,6 +103,46 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
     setPicked('')
   }
 
+  const openRename = (sprint: SubscribedIteration) => {
+    setMenuPath(null)
+    setRenameTarget(sprint)
+    setRenameName(sprint.name)
+    setRenameError('')
+  }
+
+  const saveRename = async () => {
+    if (!renameTarget) return
+    const nextName = renameName.trim()
+    if (!nextName) {
+      setRenameError('Укажите имя')
+      return
+    }
+    setRenameBusy(true)
+    setRenameError('')
+    try {
+      const renamed = await requireAzureApi().renameIteration(renameTarget.path, nextName)
+      const nextSubscribed = subscribed.map((entry) =>
+        entry.path.toLowerCase() === renameTarget.path.toLowerCase()
+          ? { path: renamed.path, name: renamed.name }
+          : entry,
+      )
+      const nextSelected =
+        selectedPath.toLowerCase() === renameTarget.path.toLowerCase()
+          ? renamed.path
+          : selectedPath
+      await updateSettings.mutateAsync({
+        subscribedIterations: nextSubscribed,
+        selectedIterationPath: nextSelected,
+      })
+      await qc.invalidateQueries({ queryKey: queryKeys.iterationPaths })
+      setRenameTarget(null)
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : 'Не удалось переименовать')
+    } finally {
+      setRenameBusy(false)
+    }
+  }
+
   return (
     <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
       <div className="mb-1 flex items-center justify-between px-3">
@@ -122,7 +184,7 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
           <div
             key={sprint.path}
             className={cn(
-              'group flex items-center gap-1 rounded-md',
+              'group flex items-center gap-0.5 rounded-md',
               active && 'bg-sky-50 dark:bg-sky-950',
             )}
           >
@@ -143,19 +205,55 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
               {sprint.name}
             </button>
             {!disabled && (
-              <button
-                type="button"
-                className="mr-1 rounded p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                title="Отписаться"
-                aria-label={`Отписаться от ${sprint.name}`}
-                onClick={() => unsubscribe(sprint.path)}
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="rounded p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  title="Действия"
+                  aria-label={`Меню ${sprint.name}`}
+                  onClick={(e) => {
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                    setMenuPos({ top: rect.bottom + 2, left: rect.right - 140 })
+                    setMenuPath(sprint.path)
+                  }}
+                >
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="mr-1 rounded p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  title="Отписаться"
+                  aria-label={`Отписаться от ${sprint.name}`}
+                  onClick={() => unsubscribe(sprint.path)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </>
             )}
           </div>
         )
       })}
+
+      {menuPath &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="z-[10050] min-w-[140px] rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-950"
+            style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+          >
+            <button
+              type="button"
+              className="block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-900"
+              onClick={() => {
+                const sprint = subscribed.find((s) => s.path === menuPath)
+                if (sprint) openRename(sprint)
+              }}
+            >
+              Переименовать
+            </button>
+          </div>,
+          document.body,
+        )}
 
       <Dialog open={addOpen} onClose={() => setAddOpen(false)} title="Добавить спринт">
         <div className="space-y-3">
@@ -187,6 +285,51 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
             </Button>
           </div>
         </div>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(renameTarget)}
+        onClose={() => !renameBusy && setRenameTarget(null)}
+        title="Переименовать итерацию"
+      >
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveRename()
+          }}
+        >
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Имя будет изменено в Azure DevOps.
+          </p>
+          {renameError ? (
+            <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-200">
+              {renameError}
+            </div>
+          ) : null}
+          <div className="space-y-1">
+            <Label htmlFor="sprint-rename-name">Новое имя</Label>
+            <Input
+              id="sprint-rename-name"
+              value={renameName}
+              onChange={(e) => setRenameName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={renameBusy}
+              onClick={() => setRenameTarget(null)}
+            >
+              Отмена
+            </Button>
+            <Button type="submit" disabled={renameBusy || !renameName.trim()}>
+              {renameBusy ? 'Сохранение…' : 'Сохранить'}
+            </Button>
+          </div>
+        </form>
       </Dialog>
     </div>
   )
