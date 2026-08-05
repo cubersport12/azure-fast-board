@@ -4,6 +4,7 @@ import {
 } from '../credentials'
 import { getConnection, getSettings } from '../store'
 import type { ConnectionConfig, WorkItemDetail } from '../../../shared/types'
+import { buildWorkItemWebUrl } from '../../../shared/utils'
 
 export interface MattermostConnectInput {
   baseUrl: string
@@ -395,15 +396,7 @@ function extractImageSrcs(html: string): string[] {
   return out
 }
 
-export function buildWorkItemWebUrl(connection: ConnectionConfig, workItemId: number): string {
-  const server = connection.serverUrl.replace(/\/+$/, '')
-  const collection = connection.collection.replace(/^\/+|\/+$/g, '')
-  const project = connection.project
-    .split('/')
-    .map((part) => encodeURIComponent(part))
-    .join('/')
-  return `${server}/${collection}/${project}/_workitems/edit/${workItemId}`
-}
+export { buildWorkItemWebUrl }
 
 function workItemTypeEmoji(type: string): string {
   const t = type.toLowerCase()

@@ -42,12 +42,7 @@ export function diffWorkItems(
     const before = prevMap.get(item.id)
     if (!before) {
       if (options.enabledEvents['workitem.created'] === false) continue
-      if (
-        options.onlyAssignedToMe &&
-        !matchesCurrentUser(item, options.currentUserUniqueName, options.currentUserDisplayName)
-      ) {
-        continue
-      }
+      // Creates are board-wide — onlyAssignedToMe does not filter them.
       changes.push({
         eventType: 'workitem.created',
         item,

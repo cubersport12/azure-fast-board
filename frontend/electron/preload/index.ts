@@ -50,6 +50,8 @@ const api: AzureFastBoardApi = {
   getCurrentUser: () => ipcRenderer.invoke(IPC_CHANNELS.currentUser),
   listAreaPaths: () => ipcRenderer.invoke(IPC_CHANNELS.areaPaths),
   listIterationPaths: () => ipcRenderer.invoke(IPC_CHANNELS.iterationPaths),
+  renameIteration: (path: string, newName: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.renameIteration, path, newName),
   listViews: () => ipcRenderer.invoke(IPC_CHANNELS.viewsList),
   saveView: (view: SavedView) => ipcRenderer.invoke(IPC_CHANNELS.viewsSave, view),
   deleteView: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.viewsDelete, id),

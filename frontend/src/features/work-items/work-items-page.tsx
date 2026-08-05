@@ -74,7 +74,7 @@ export function WorkItemsPage() {
         cell: ({ row }) => (
           <div className="flex gap-1">
             {row.original.tags.slice(0, 2).map((tag) => (
-              <Badge key={tag}>{tag}</Badge>
+              <Badge key={tag} variant="secondary">{tag}</Badge>
             ))}
           </div>
         ),

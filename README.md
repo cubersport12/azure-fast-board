@@ -115,6 +115,14 @@ npm run dev
 
 Дополнительно: провайдеры Mattermost / SMTP; локальный poll — fallback, если WebSocket недоступен.
 
+### Плагин Mattermost: `/bug` и `/task`
+
+В каталоге [`mattermost-plugin-azure`](mattermost-plugin-azure/README.md) — серверный плагин Mattermost для создания Bug/Task в on‑prem Azure DevOps **из чата**:
+
+- `/bug`, `/task` — формы полей как в быстром создании Azure Fast Board;
+- при первом запуске — диалог входа (NTLM `DOMAIN\user` / пароль или PAT), учётные данные сохраняются на сервере MM;
+- сборка: `cd mattermost-plugin-azure && go mod tidy && make bundle`.
+
 На on‑prem с IIS Basic Auth авторизация как у npm/Artifacts:
 
 `Authorization: Basic base64("{Collection|VssSessionToken}:{pat}")`

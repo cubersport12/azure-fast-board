@@ -26,7 +26,7 @@ describe('diffWorkItems', () => {
     expect(changes[0].eventType).toBe('workitem.created')
   })
 
-  it('filters by assignee when onlyAssignedToMe', () => {
+  it('notifies all creates even when onlyAssignedToMe', () => {
     const changes = diffWorkItems(
       [],
       [
@@ -39,6 +39,23 @@ describe('diffWorkItems', () => {
         enabledEvents: { 'workitem.created': true },
       },
     )
+    expect(changes.map((c) => c.item.id)).toEqual([1, 2])
+  })
+
+  it('filters updates by assignee when onlyAssignedToMe', () => {
+    const before = [
+      item({ id: 1, title: 'Mine', rev: 1, assignedToUniqueName: 'me@corp' }),
+      item({ id: 2, title: 'Other', rev: 1, assignedToUniqueName: 'other@corp' }),
+    ]
+    const after = [
+      item({ id: 1, title: 'Mine', rev: 2, state: 'Active', assignedToUniqueName: 'me@corp' }),
+      item({ id: 2, title: 'Other', rev: 2, state: 'Active', assignedToUniqueName: 'other@corp' }),
+    ]
+    const changes = diffWorkItems(before, after, {
+      onlyAssignedToMe: true,
+      currentUserUniqueName: 'me@corp',
+      enabledEvents: { 'workitem.updated': true },
+    })
     expect(changes.map((c) => c.item.id)).toEqual([1])
   })
 

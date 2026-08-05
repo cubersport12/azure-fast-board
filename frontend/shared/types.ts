@@ -156,9 +156,39 @@ export interface AppSettings {
   }
   /** Custom filter presets (create / rename / update / delete). */
   filterPresets: StoredFilterPreset[]
+  /** Board tile field presets (board page only). */
+  boardCardFieldPresets: BoardCardFieldPreset[]
+  /** Active board card field preset id (defaults to «По умолчанию»). */
+  activeBoardCardFieldPresetId: string
   /** Starred dropdown options keyed by Dropdown `favoritesKey` (keeps label for search-backed lists). */
   selectFavorites: Record<string, SelectFavoriteOption[]>
   notifications: NotificationSettings
+}
+
+/** Optional fields shown on kanban tiles (beyond always-visible chrome). */
+export type BoardCardFieldId =
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'createdBy'
+  | 'createdDate'
+  | 'area'
+  | 'comments'
+  | 'description'
+
+export interface BoardCardFieldPreset {
+  id: string
+  name: string
+  fields: BoardCardFieldId[]
+}
+
+/** Built-in board card view — always present in settings. */
+export const DEFAULT_BOARD_CARD_PRESET_ID = 'default'
+
+export const DEFAULT_BOARD_CARD_PRESET: BoardCardFieldPreset = {
+  id: DEFAULT_BOARD_CARD_PRESET_ID,
+  name: 'По умолчанию',
+  fields: ['status', 'assignee', 'createdDate', 'createdBy'],
 }
 
 /** Azure DevOps Service Hooks subscription (subset used by the app). */
@@ -423,6 +453,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     tags: [],
   },
   filterPresets: [],
+  boardCardFieldPresets: [DEFAULT_BOARD_CARD_PRESET],
+  activeBoardCardFieldPresetId: DEFAULT_BOARD_CARD_PRESET_ID,
   selectFavorites: {},
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
 }

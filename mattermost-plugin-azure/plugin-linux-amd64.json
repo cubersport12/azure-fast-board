@@ -1,0 +1,76 @@
+{
+  "id": "com.azurefastboard.ado",
+  "name": "Azure DevOps Work Items",
+  "description": "Create Bug and Task in Azure DevOps Server (on-prem) via /bug and /task. Credentials stay on your Mattermost server (encrypted KV) and are used only to call your ADO — never sent to third parties.",
+  "homepage_url": "https://github.com/cubersport12/azure-fast-board",
+  "support_url": "https://github.com/cubersport12/azure-fast-board/issues",
+  "release_notes_url": "https://github.com/cubersport12/azure-fast-board",
+  "version": "0.3.0",
+  "min_server_version": "7.0.0",
+  "server": {
+    "executables": {
+      "linux-amd64": "server/dist/plugin-linux-amd64"
+    }
+  },
+  "webapp": {
+    "bundle_path": "webapp/dist/main.js"
+  },
+  "settings_schema": {
+    "header": "Creates work items in on-prem Azure DevOps. Login/password are stored encrypted in the Mattermost plugin KV (per user) and used only for outbound calls from this Mattermost server to your ADO. They are not sent to any external Fast Board cloud. Unlike the Electron app, a Mattermost server plugin cannot keep NTLM secrets only in the browser.",
+    "settings": [
+      {
+        "key": "DefaultServerURL",
+        "display_name": "Default Azure DevOps URL",
+        "type": "text",
+        "help_text": "Example: https://devops.company.local/tfs",
+        "placeholder": "https://devops.company.local/tfs",
+        "default": ""
+      },
+      {
+        "key": "DefaultCollection",
+        "display_name": "Default collection",
+        "type": "text",
+        "default": "DefaultCollection"
+      },
+      {
+        "key": "DefaultProject",
+        "display_name": "Default project",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "DefaultTeam",
+        "display_name": "Default team",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "APIVersion",
+        "display_name": "API Version",
+        "type": "text",
+        "default": "7.0"
+      },
+      {
+        "key": "InsecureTLS",
+        "display_name": "Allow insecure TLS",
+        "type": "bool",
+        "help_text": "For corporate/self-signed certificates.",
+        "default": "false"
+      },
+      {
+        "key": "EncryptionKey",
+        "display_name": "Password encryption key",
+        "type": "text",
+        "help_text": "AES key material for encrypting user passwords in plugin KV. Set a long random secret in production. If empty, a random per-install key is stored in KV automatically.",
+        "default": ""
+      },
+      {
+        "key": "WorkItemBaseURL",
+        "display_name": "Work item link base URL",
+        "type": "text",
+        "help_text": "Optional override for work item links.",
+        "default": ""
+      }
+    ]
+  }
+}

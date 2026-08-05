@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { StoredFilterPreset, WorkItem } from '../../shared/types'
 import { Button } from '@/components/ui/button'
 import { Dropdown } from '@/components/ui/dropdown'
@@ -326,10 +326,13 @@ export function WorkItemFilterBar({
   items,
   filters,
   onChange,
+  trailing,
 }: {
   items: WorkItem[]
   filters: WorkItemFilters
   onChange: (next: WorkItemFilters) => void
+  /** Extra controls in the filter header (e.g. board card views). */
+  trailing?: ReactNode
 }) {
   const options = useMemo(() => {
     const base = uniqueOptions(items)
@@ -363,15 +366,16 @@ export function WorkItemFilterBar({
     list.map((value) => ({ value, label: formatOptionLabel(value) }))
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-sm font-medium text-slate-800 dark:text-slate-100">Фильтры</div>
-        <div className="flex items-center gap-2">
+    <div className="w-full rounded-xl border border-border bg-card p-3 text-card-foreground shadow-sm">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium">Фильтры</div>
+        <div className="flex flex-wrap items-center gap-2">
           <FilterPresetDropdown
             filters={normalizedFilters}
             availableStates={options.states}
             onChange={onChange}
           />
+          {trailing}
           {active && (
             <Button size="sm" variant="ghost" onClick={() => onChange(EMPTY_FILTERS)}>
               <X className="h-3.5 w-3.5" /> Сбросить

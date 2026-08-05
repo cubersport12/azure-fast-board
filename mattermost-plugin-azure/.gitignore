@@ -1,0 +1,8 @@
+server/dist/
+dist/
+*.tar.gz
+.vscode/
+.idea/
+*.exe
+*.test
+/vendor/

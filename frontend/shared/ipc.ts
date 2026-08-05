@@ -52,6 +52,7 @@ export const IPC_CHANNELS = {
   currentUser: 'meta:currentUser',
   areaPaths: 'meta:areaPaths',
   iterationPaths: 'meta:iterationPaths',
+  renameIteration: 'meta:renameIteration',
   viewsList: 'views:list',
   viewsSave: 'views:save',
   viewsDelete: 'views:delete',
@@ -128,6 +129,10 @@ export interface AzureFastBoardApi {
   getCurrentUser: () => Promise<AssigneeIdentity>
   listAreaPaths: () => Promise<AreaPathsResult>
   listIterationPaths: () => Promise<IterationPathsResult>
+  renameIteration: (
+    path: string,
+    newName: string,
+  ) => Promise<{ path: string; name: string }>
   listViews: () => Promise<SavedView[]>
   saveView: (view: SavedView) => Promise<SavedView[]>
   deleteView: (id: string) => Promise<SavedView[]>

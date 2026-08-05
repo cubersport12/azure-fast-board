@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { Calendar, FileText, Flag, Folder, Plus, Tag, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Dropdown } from '@/components/ui/dropdown'
-import { Badge, Dialog, Input, Label } from '@/components/ui/primitives'
+import { TagsField } from '@/components/tags-field'
+import { Dialog, Input, Label } from '@/components/ui/primitives'
 import {
   useAreaPaths,
   useAssignees,
@@ -17,6 +18,7 @@ import {
 } from '@/hooks/use-azure'
 import { requireAzureApi } from '@/lib/azure-api'
 import { uniqueOptions } from '@/lib/work-item-filters'
+import { cn, workItemColor } from '@/lib/utils'
 import {
   ADO_FIELD_DESCRIPTION,
   ADO_FIELD_REPRO_STEPS,
@@ -65,6 +67,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const { data: workItems = EMPTY_WORK_ITEMS } = useWorkItems()
   const create = useCreateWorkItem()
   const updateSettings = useUpdateSettings()
+
   const [type, setType] = useState('Bug')
   const [title, setTitle] = useState('')
   const [bodyHtml, setBodyHtml] = useState('')
@@ -73,9 +76,11 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const [iterationPath, setIterationPath] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [extraTags, setExtraTags] = useState<string[]>([])
+  const [priority, setPriority] = useState('')
   const [people, setPeople] = useState<AssigneeIdentity[]>([])
   const [searching, setSearching] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
   const searchTimer = useRef<number | null>(null)
   const pendingUploads = useRef(new Map<string, AttachmentUpload>())
   const blobUrls = useRef<string[]>([])
@@ -93,27 +98,19 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     return [...new Set([...fromItems, ...extraTags])].sort((a, b) => a.localeCompare(b))
   }, [workItems, extraTags])
 
-  const tagOptions = useMemo(
-    () =>
-      knownTags
-        .filter((tag) => !tags.some((selected) => selected.toLowerCase() === tag.toLowerCase()))
-        .map((tag) => ({ value: tag, label: tag })),
-    [knownTags, tags],
-  )
-
-  const addTag = useCallback((tag: string) => {
-    const next = tag.trim()
-    if (!next) return
-    setTags((current) =>
-      current.some((entry) => entry.toLowerCase() === next.toLowerCase())
-        ? current
-        : [...current, next],
-    )
-    setExtraTags((current) =>
-      current.some((entry) => entry.toLowerCase() === next.toLowerCase())
-        ? current
-        : [...current, next],
-    )
+  const onTagsChange = useCallback((next: string[]) => {
+    setTags(next)
+    setExtraTags((current) => {
+      const merged = new Set(current.map((t) => t.toLowerCase()))
+      const out = [...current]
+      for (const tag of next) {
+        if (!merged.has(tag.toLowerCase())) {
+          out.push(tag)
+          merged.add(tag.toLowerCase())
+        }
+      }
+      return out
+    })
   }, [])
 
   const defaultAssignee = useMemo(() => settings?.lastAssignee ?? '', [settings?.lastAssignee])
@@ -139,6 +136,13 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     return [...byPath.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'))
   }, [iterationPaths?.iterations, settings?.subscribedIterations, selectedIteration])
 
+  const typeOptions = useMemo(() => {
+    return types.map((entry) => ({
+      value: entry.name,
+      label: entry.name,
+    }))
+  }, [types])
+
   useEffect(() => {
     if (open) {
       setTitle('')
@@ -148,6 +152,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       setIterationPath(selectedIteration)
       setTags([])
       setExtraTags([])
+      setPriority('')
       setType(types.find((entry) => entry.name === 'Bug')?.name || types[0]?.name || 'Bug')
       setPeople(teamAssignees)
       setSubmitting(false)
@@ -194,7 +199,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     [teamAssignees],
   )
 
-  const options = useMemo(() => {
+  const assigneeOptions = useMemo(() => {
     const mapped = people.map((person) => ({
       value: assigneeValue(person),
       label: person.displayName,
@@ -228,14 +233,15 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       const textOnly = stripBlobImages(html).trim()
       const hasBody = !isRichTextEmpty(textOnly) || extractBlobSrcs(html).length > 0
 
+      const extraFields: Record<string, string | number | boolean | null> = {}
+      if (bugBody && textOnly) extraFields[ADO_FIELD_REPRO_STEPS] = textOnly
+      if (priority) extraFields['Microsoft.VSTS.Common.Priority'] = Number(priority)
+
       const created = await create.mutateAsync({
         type,
         title: title.trim(),
         description: !bugBody && textOnly ? textOnly : undefined,
-        fields:
-          bugBody && textOnly
-            ? { [ADO_FIELD_REPRO_STEPS]: textOnly }
-            : undefined,
+        fields: Object.keys(extraFields).length ? extraFields : undefined,
         assignedTo: nextAssignee || undefined,
         areaPath: areaPath.trim() || undefined,
         iterationPath: iterationPath.trim() || undefined,
@@ -279,26 +285,103 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} title="Быстрое создание" wide>
-      <form className="flex max-h-[calc(100vh-12rem)] flex-col" onSubmit={submit}>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="quick-create-type">Тип</Label>
-              <select
+      <form className="flex max-h-[calc(100vh-10rem)] flex-col" onSubmit={submit}>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          {/* Main Title Field */}
+          <div className="space-y-1.5">
+            <Label htmlFor="quick-create-title" className="text-xs font-semibold text-foreground">
+              Название
+            </Label>
+            <Input
+              id="quick-create-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Что нужно сделать или какой баг возник?"
+              className="h-10 text-sm font-medium"
+              autoFocus
+            />
+          </div>
+
+          {/* Type & Priority Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="quick-create-type" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className={cn('h-2 w-2 rounded-full', workItemColor(type))} /> Тип элемента
+              </Label>
+              <Dropdown
                 id="quick-create-type"
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 value={type}
-                onChange={(e) => setType(e.target.value)}
-              >
-                {types.map((entry) => (
-                  <option key={entry.name} value={entry.name}>
-                    {entry.name}
-                  </option>
-                ))}
-              </select>
+                options={typeOptions}
+                onChange={setType}
+                searchable={false}
+                allowEmpty={false}
+              />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="quick-create-area">Area</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="quick-create-priority" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Flag className="h-3.5 w-3.5 text-primary/70" /> Приоритет
+              </Label>
+              <Dropdown
+                id="quick-create-priority"
+                value={priority}
+                options={[
+                  { value: '1', label: '1 — Высочайший (P1)' },
+                  { value: '2', label: '2 — Высокий (P2)' },
+                  { value: '3', label: '3 — Средний (P3)' },
+                  { value: '4', label: '4 — Низкий (P4)' },
+                ]}
+                onChange={setPriority}
+                placeholder="Не указано"
+                emptyLabel="Не указано"
+                searchable={false}
+                allowEmpty
+              />
+            </div>
+          </div>
+
+          {/* Attributes Grid (Assignee, Iteration, Area, Tags) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="quick-create-assigned" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <User className="h-3.5 w-3.5 text-primary/70" /> Исполнитель
+              </Label>
+              <Dropdown
+                id="quick-create-assigned"
+                favoritesKey="quick-create-assigned"
+                value={assignedTo}
+                options={assigneeOptions}
+                onChange={setAssignedTo}
+                onSearch={handleSearch}
+                placeholder="Не назначен"
+                emptyLabel="Не назначен"
+                searchPlaceholder={searching ? 'Поиск…' : 'Найти человека…'}
+                allowEmpty
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="quick-create-iteration" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Calendar className="h-3.5 w-3.5 text-primary/70" /> Итерация (Sprint)
+              </Label>
+              <Dropdown
+                id="quick-create-iteration"
+                favoritesKey="quick-create-iteration"
+                value={iterationPath}
+                options={iterationOptions}
+                onChange={setIterationPath}
+                placeholder="Не выбрано"
+                emptyLabel="Не выбрано"
+                searchPlaceholder="Поиск итерации…"
+                suggestionsLabel="Suggestions"
+                allowEmpty
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="quick-create-area" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Folder className="h-3.5 w-3.5 text-primary/70" /> Область (Area)
+              </Label>
               <Dropdown
                 id="quick-create-area"
                 favoritesKey="quick-create-area"
@@ -316,7 +399,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
                     value: area.path,
                     label: area.name,
                   }))}
-                onChange={(next) => setAreaPath(next || rootPath)}
+                onChange={(next) => setAreaPath(next || rootPath || '')}
                 placeholder="Не указано"
                 emptyLabel="Не указано"
                 searchPlaceholder="Поиск Area…"
@@ -324,85 +407,27 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
                 allowEmpty
               />
             </div>
-            <div className="space-y-1 col-span-2">
-              <Label htmlFor="quick-create-iteration">Итерация</Label>
-              <Dropdown
-                id="quick-create-iteration"
-                favoritesKey="quick-create-iteration"
-                value={iterationPath}
-                options={iterationOptions}
-                onChange={setIterationPath}
-                placeholder="Не выбрано"
-                emptyLabel="Не выбрано"
-                searchPlaceholder="Поиск итерации…"
-                suggestionsLabel="Suggestions"
-                allowEmpty
-              />
-            </div>
-            <div className="space-y-1 col-span-2">
-              <Label htmlFor="quick-create-assigned">Исполнитель</Label>
-              <Dropdown
-                id="quick-create-assigned"
-                favoritesKey="quick-create-assigned"
-                value={assignedTo}
-                options={options}
-                onChange={setAssignedTo}
-                onSearch={handleSearch}
-                placeholder="Не назначен"
-                emptyLabel="Не назначен"
-                searchPlaceholder={searching ? 'Поиск…' : 'Найти человека…'}
-                allowEmpty
-              />
-            </div>
-            <div className="space-y-1 col-span-2">
-              <Label htmlFor="quick-create-tags">Тэг</Label>
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pb-1">
-                  {tags.map((tag) => (
-                    <Badge key={tag} className="gap-1 pr-1">
-                      {tag}
-                      <button
-                        type="button"
-                        className="rounded-full p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700"
-                        aria-label={`Удалить тэг ${tag}`}
-                        onClick={() => setTags((current) => current.filter((entry) => entry !== tag))}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-              <Dropdown
+
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Tag className="h-3.5 w-3.5 text-primary/70" /> Теги
+              </Label>
+              <TagsField
                 id="quick-create-tags"
-                favoritesKey="quick-create-tags"
-                value=""
-                options={tagOptions}
-                onChange={(next) => {
-                  if (next) addTag(next)
-                }}
-                onCreate={addTag}
+                value={tags}
+                options={knownTags}
+                onChange={onTagsChange}
                 placeholder="Добавить тэг"
-                emptyLabel="Без тэга"
-                searchPlaceholder="Поиск тэга…"
-                suggestionsLabel="Suggestions"
-                createLabel="Создать новый тэг"
-                allowEmpty={false}
               />
             </div>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="quick-create-title">Название</Label>
-            <Input
-              id="quick-create-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Что нужно сделать?"
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>{bugBody ? 'Шаги воспроизведения' : 'Описание'}</Label>
+
+          {/* Description / Repro Steps Field */}
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <FileText className="h-3.5 w-3.5 text-primary/70" />
+              {bugBody ? 'Шаги воспроизведения' : 'Описание'}
+            </Label>
             <RichTextEditor
               key={`create-${open ? 'open' : 'closed'}-${type}`}
               value={bodyHtml}
@@ -410,22 +435,35 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
               onUploadImage={onUploadImage}
               placeholder={
                 bugBody
-                  ? 'Steps to Reproduce… Ctrl+V — скриншот'
-                  : 'Текст описания… Ctrl+V — скриншот'
+                  ? 'Опишите шаги для воспроизведения бага… Ctrl+V — скриншот'
+                  : 'Текст описания задачи… Ctrl+V — скриншот'
               }
-              minHeight={140}
-              maxHeight={220}
+              minHeight={130}
+              maxHeight={200}
               data-composer="create"
             />
           </div>
         </div>
-        <div className="flex shrink-0 items-center justify-between border-t border-slate-100 pt-3 mt-3 dark:border-slate-800">
-          <span className="text-[11px] text-slate-500">
-            Ctrl+V — скриншот · Esc — закрыть
+
+        {/* Dialog Footer Actions */}
+        <div className="flex shrink-0 items-center justify-between border-t border-border pt-3 mt-4">
+          <span className="text-[11px] text-muted-foreground">
+            Ctrl+V — вставка скриншота · Esc — закрыть
           </span>
-          <Button type="submit" disabled={!title.trim() || submitting || create.isPending}>
-            {submitting || create.isPending ? 'Создание…' : 'Создать'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!title.trim() || submitting || create.isPending}
+              className="gap-1.5 font-medium"
+            >
+              <Plus className="h-4 w-4" />
+              {submitting || create.isPending ? 'Создание…' : 'Создать'}
+            </Button>
+          </div>
         </div>
       </form>
     </Dialog>
