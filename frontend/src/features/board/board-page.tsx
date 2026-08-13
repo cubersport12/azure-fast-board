@@ -126,7 +126,7 @@ const Column = memo(function Column({
           <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="flex min-h-35 max-h-[calc(100vh-280px)] flex-col gap-2.5 overflow-y-auto overflow-x-hidden p-2.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overflow-x-hidden p-2.5">
         {items.map((item) => (
           <DraggableCard
             key={item.id}
@@ -303,14 +303,14 @@ export function BoardPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <WorkItemFilterBar
         items={items}
         filters={filters}
         onChange={setFilters}
         trailing={<BoardCardPresetBar />}
       />
-      <div className="text-sm text-muted-foreground">{filtered.length} карточек</div>
+      <div className="shrink-0 text-sm text-muted-foreground">{filtered.length} карточек</div>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -318,7 +318,7 @@ export function BoardPage() {
         onDragEnd={onDragEnd}
         onDragCancel={onDragCancel}
       >
-        <div className="flex w-full gap-3 pb-2">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
           {displayColumns.map((column) => (
             <Column
               key={column.id}

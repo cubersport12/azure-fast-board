@@ -4,6 +4,7 @@ import { AppShell } from '@/components/app-shell'
 import { BoardPage } from '@/features/board/board-page'
 import { WorkItemDetailPage } from '@/features/work-item-detail/work-item-detail-page'
 import { WorkItemsPage } from '@/features/work-items/work-items-page'
+import { MattermostBoardPage } from '@/features/mattermost-board/mattermost-board-page'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/board" element={<BoardPage />} />
             <Route path="/work-items" element={<WorkItemsPage />} />
             <Route path="/work-items/:id" element={<WorkItemDetailPage />} />
+            <Route path="/mattermost-board" element={<MattermostBoardPage />} />
           </Route>
         </Routes>
       </HashRouter>

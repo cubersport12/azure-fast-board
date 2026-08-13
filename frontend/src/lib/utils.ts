@@ -1,6 +1,16 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { formatRelative, parseTags, workItemColor } from '../../shared/utils'
+import {
+  cardIdFromMmTag,
+  findWorkItemByTitle,
+  formatRelative,
+  mattermostCardUrl,
+  appendMmImportFooter,
+  mmCardTag,
+  parseTags,
+  plainTextToHtml,
+  workItemColor,
+} from '../../shared/utils'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -18,4 +28,14 @@ export function isTypingTarget(target: EventTarget | null) {
   )
 }
 
-export { formatRelative, parseTags, workItemColor }
+export {
+  appendMmImportFooter,
+  cardIdFromMmTag,
+  findWorkItemByTitle,
+  formatRelative,
+  mattermostCardUrl,
+  mmCardTag,
+  parseTags,
+  plainTextToHtml,
+  workItemColor,
+}

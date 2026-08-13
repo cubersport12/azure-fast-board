@@ -80,6 +80,14 @@ const api: AzureFastBoardApi = {
   getMattermostUsersByIds: (ids) => ipcRenderer.invoke(IPC_CHANNELS.mattermostUsersByIds, ids),
   shareWorkItemToMattermost: (input) =>
     ipcRenderer.invoke(IPC_CHANNELS.mattermostShareWorkItem, input),
+  listMattermostBoards: (teamId, channelId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mattermostListBoards, teamId, channelId),
+  listMattermostBoardCards: (boardId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mattermostListBoardCards, boardId),
+  importMattermostCards: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mattermostImportCards, input),
+  linkMattermostCard: (input) => ipcRenderer.invoke(IPC_CHANNELS.mattermostLinkCard, input),
+  getMattermostImports: () => ipcRenderer.invoke(IPC_CHANNELS.mattermostGetImports),
   getNotificationHistory: () => ipcRenderer.invoke(IPC_CHANNELS.notificationsHistory),
   markNotificationRead: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.notificationsMarkRead, id),
   markNotificationsReadByWorkItem: (workItemId: number) =>
@@ -96,6 +104,7 @@ const api: AzureFastBoardApi = {
     subscribe<{ reason: string }>(IPC_CHANNELS.eventWorkItemsInvalidate, cb),
   debugLog: (message: string, data?: unknown) =>
     ipcRenderer.invoke(IPC_CHANNELS.debugLog, message, data),
+  checkAppUpdate: () => ipcRenderer.invoke(IPC_CHANNELS.appCheckUpdate),
 }
 
 contextBridge.exposeInMainWorld('azureFastBoard', api)

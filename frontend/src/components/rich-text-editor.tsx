@@ -148,6 +148,16 @@ export function RichTextEditor({
   const emitHtml = (editorHtml: string) => {
     const restored = restoreOriginalSrcs(editorHtml, blobToOriginalRef.current)
     if (restored === lastEmitted.current) return
+    // TipTap mounts with <p></p> and would wipe a parent that already has draft HTML.
+    if (
+      !htmlPlainText(lastEmitted.current) &&
+      !htmlPlainText(restored) &&
+      !/<img\b/i.test(restored) &&
+      (htmlPlainText(valueRef.current) || /<img\b/i.test(valueRef.current || ''))
+    ) {
+      log('ignore empty mount emit', { parent: htmlPlainText(valueRef.current) })
+      return
+    }
     // Ignore image-hydration pulses that strip body text (parent may echo them back).
     if (
       dataComposer === 'body' &&
@@ -270,7 +280,7 @@ export function RichTextEditor({
     const incomingText = htmlPlainText(incoming)
     const incomingHasImg = /<img\b/i.test(incoming)
     const source =
-      dataComposer === 'body' &&
+      (dataComposer === 'body' || dataComposer === 'create') &&
       !incomingText &&
       !incomingHasImg &&
       lastGoodValueRef.current
@@ -523,6 +533,15 @@ export function htmlPlainText(html: string) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+/** True when two HTML strings have the same visible text and media/links. */
+export function htmlContentEqual(a: string, b: string) {
+  if (a === b) return true
+  if (htmlPlainText(a) !== htmlPlainText(b)) return false
+  const refs = (html: string) =>
+    [...(html || '').matchAll(/\b(?:src|href)=["']([^"']+)["']/gi)].map((match) => match[1]).join('\n')
+  return refs(a) === refs(b)
 }
 
 /** True when HTML has no meaningful text/images. */

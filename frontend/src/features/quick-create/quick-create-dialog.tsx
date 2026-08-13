@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Calendar, FileText, Flag, Folder, Plus, Tag, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor, isRichTextEmpty } from '@/components/rich-text-editor'
@@ -18,7 +19,7 @@ import {
 } from '@/hooks/use-azure'
 import { requireAzureApi } from '@/lib/azure-api'
 import { uniqueOptions } from '@/lib/work-item-filters'
-import { cn, workItemColor } from '@/lib/utils'
+import { cn, cardIdFromMmTag, workItemColor } from '@/lib/utils'
 import {
   ADO_FIELD_DESCRIPTION,
   ADO_FIELD_REPRO_STEPS,
@@ -57,6 +58,7 @@ function extractBlobSrcs(html: string) {
 
 export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string }) {
   const open = useUiStore((s) => s.quickCreateOpen)
+  const draft = useUiStore((s) => s.quickCreateDraft)
   const setOpen = useUiStore((s) => s.setQuickCreateOpen)
   const { data: types = EMPTY_TYPES } = useWorkItemTypes()
   const { data: connection } = useConnection()
@@ -67,6 +69,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const { data: workItems = EMPTY_WORK_ITEMS } = useWorkItems()
   const create = useCreateWorkItem()
   const updateSettings = useUpdateSettings()
+  const qc = useQueryClient()
 
   const [type, setType] = useState('Bug')
   const [title, setTitle] = useState('')
@@ -145,15 +148,20 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
 
   useEffect(() => {
     if (open) {
-      setTitle('')
-      setBodyHtml('')
+      setTitle(draft?.title ?? '')
+      setBodyHtml(draft?.bodyHtml ?? '')
       setAssignedTo(defaultAssignee)
       setAreaPath(defaultAreaPath || rootPath)
       setIterationPath(selectedIteration)
-      setTags([])
-      setExtraTags([])
-      setPriority('')
-      setType(types.find((entry) => entry.name === 'Bug')?.name || types[0]?.name || 'Bug')
+      setTags(draft?.tags ?? [])
+      setExtraTags(draft?.tags ?? [])
+      setPriority(draft?.priority ?? '')
+      setType(
+        draft?.type ||
+          types.find((entry) => entry.name === 'Bug')?.name ||
+          types[0]?.name ||
+          'Bug',
+      )
       setPeople(teamAssignees)
       setSubmitting(false)
       for (const url of blobUrls.current) URL.revokeObjectURL(url)
@@ -163,7 +171,16 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
         document.getElementById('quick-create-title')?.focus()
       })
     }
-  }, [open, types, defaultAssignee, defaultAreaPath, rootPath, teamAssignees, selectedIteration])
+  }, [
+    open,
+    draft,
+    types,
+    defaultAssignee,
+    defaultAreaPath,
+    rootPath,
+    teamAssignees,
+    selectedIteration,
+  ])
 
   useEffect(() => {
     return () => {
@@ -232,20 +249,24 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       const html = bodyHtml.trim()
       const textOnly = stripBlobImages(html).trim()
       const hasBody = !isRichTextEmpty(textOnly) || extractBlobSrcs(html).length > 0
+      const nextTags = draft?.mattermostCardId
+        ? tags.filter((tag) => !cardIdFromMmTag(tag))
+        : tags
 
       const extraFields: Record<string, string | number | boolean | null> = {}
-      if (bugBody && textOnly) extraFields[ADO_FIELD_REPRO_STEPS] = textOnly
+      const bodyToSave = !isRichTextEmpty(textOnly) ? textOnly : ''
+      if (bugBody && bodyToSave) extraFields[ADO_FIELD_REPRO_STEPS] = bodyToSave
       if (priority) extraFields['Microsoft.VSTS.Common.Priority'] = Number(priority)
 
       const created = await create.mutateAsync({
         type,
         title: title.trim(),
-        description: !bugBody && textOnly ? textOnly : undefined,
+        description: !bugBody && bodyToSave ? bodyToSave : undefined,
         fields: Object.keys(extraFields).length ? extraFields : undefined,
         assignedTo: nextAssignee || undefined,
         areaPath: areaPath.trim() || undefined,
         iterationPath: iterationPath.trim() || undefined,
-        tags: tags.length ? tags : undefined,
+        tags: nextTags.length ? nextTags : undefined,
         boardColumn: defaultColumn,
       })
 
@@ -277,6 +298,14 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       }
 
       void updateSettings.mutateAsync({ lastAssignee: nextAssignee })
+      if (draft?.mattermostCardId) {
+        await requireAzureApi().linkMattermostCard({
+          cardId: draft.mattermostCardId,
+          workItemId: created.id,
+          boardId: draft.mattermostBoardId || '',
+        })
+        void qc.invalidateQueries({ queryKey: ['mm-imports'] })
+      }
       setOpen(false)
     } finally {
       setSubmitting(false)
@@ -284,7 +313,12 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   }
 
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} title="Быстрое создание" wide>
+    <Dialog
+      open={open}
+      onClose={() => setOpen(false)}
+      title={draft?.mattermostCardId ? 'Создание из Mattermost' : 'Быстрое создание'}
+      wide
+    >
       <form className="flex max-h-[calc(100vh-10rem)] flex-col" onSubmit={submit}>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
           {/* Main Title Field */}
@@ -429,7 +463,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
               {bugBody ? 'Шаги воспроизведения' : 'Описание'}
             </Label>
             <RichTextEditor
-              key={`create-${open ? 'open' : 'closed'}-${type}`}
+              key={`create-${open ? 'open' : 'closed'}-${type}-${draft?.mattermostCardId || ''}`}
               value={bodyHtml}
               onChange={setBodyHtml}
               onUploadImage={onUploadImage}
