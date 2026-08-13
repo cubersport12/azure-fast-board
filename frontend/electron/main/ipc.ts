@@ -25,17 +25,21 @@ import {
   saveSmtpPassword,
   saveNotificationsApiToken,
 } from './credentials'
+import { checkAppUpdate } from './app-update'
 import { toIpcError } from './ipc-error'
 import {
   connectMattermostAndPingSelf,
   getMattermostConfigured,
   listMattermostChannels,
   listMattermostTeams,
+  listMattermostBoards,
+  listMattermostBoardCards,
   notifyWorkItemCreatedToMattermostIfEnabled,
   getMattermostUsersByIds,
   searchMattermostUsers,
   shareWorkItemToMattermost,
 } from './mattermost/client'
+import { importMattermostCards, linkMattermostCard, syncMattermostImports } from './mattermost/import-boards'
 import { NotificationService } from './notifications'
 import {
   clearConnection,
@@ -150,6 +154,14 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   ipcMain.handle(IPC_CHANNELS.debugLog, (_e, message: string, data?: unknown) => {
     if (data !== undefined) console.log(String(message || ''), data)
     else console.log(String(message || ''))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.appCheckUpdate, async () => {
+    try {
+      return await checkAppUpdate()
+    } catch (error) {
+      throw toIpcError(error)
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => getSettings())
@@ -713,6 +725,74 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
       }
     },
   )
+
+  ipcMain.handle(IPC_CHANNELS.mattermostListBoards, async (_e, teamId: string, channelId: string) => {
+    try {
+      return await listMattermostBoards(String(teamId || ''), String(channelId || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.mattermostListBoardCards, async (_e, boardId: string) => {
+    try {
+      return await listMattermostBoardCards(String(boardId || ''))
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.mattermostImportCards,
+    async (_e, input: {
+      boardId?: string
+      cardIds?: string[]
+      type?: string
+      iterationPath?: string
+      assignedTo?: string
+      areaPath?: string
+    }) => {
+      try {
+        const created = await importMattermostCards(requireClient(), {
+          boardId: String(input?.boardId || ''),
+          cardIds: Array.isArray(input?.cardIds) ? input.cardIds.map(String) : [],
+          type: String(input?.type || 'Bug'),
+          iterationPath: input?.iterationPath ? String(input.iterationPath) : undefined,
+          assignedTo: input?.assignedTo ? String(input.assignedTo) : undefined,
+          areaPath: input?.areaPath ? String(input.areaPath) : undefined,
+        })
+        for (const entry of created) {
+          notificationService?.noteSelfAction(entry.workItemId)
+        }
+        return created
+      } catch (error) {
+        throw toIpcError(error)
+      }
+    },
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.mattermostLinkCard,
+    async (_e, input: { cardId?: string; workItemId?: number; boardId?: string }) => {
+      try {
+        return await linkMattermostCard(getClient(), {
+          cardId: String(input?.cardId || ''),
+          workItemId: Number(input?.workItemId),
+          boardId: String(input?.boardId || ''),
+        })
+      } catch (error) {
+        throw toIpcError(error)
+      }
+    },
+  )
+
+  ipcMain.handle(IPC_CHANNELS.mattermostGetImports, async () => {
+    try {
+      return await syncMattermostImports(getClient())
+    } catch (error) {
+      throw toIpcError(error)
+    }
+  })
   ipcMain.handle(IPC_CHANNELS.notificationsHistory, () => notificationService?.getHistory() ?? [])
   ipcMain.handle(IPC_CHANNELS.notificationsMarkRead, (_e, id: string) =>
     notificationService?.markRead(String(id || '')) ?? [],

@@ -43,6 +43,9 @@ export function CommandPalette() {
             <CommandItem onSelect={() => run(() => navigate('/work-items'))}>
               Открыть список рабочих элементов
             </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/mattermost-board'))}>
+              Открыть Mattermost board
+            </CommandItem>
           </CommandGroup>
           <CommandGroup heading="Действия">
             <CommandItem onSelect={() => run(() => setQuickCreateOpen(true))}>

@@ -39,7 +39,7 @@ jobs:
         run: npm ci
 
       - name: Build installer
-        run: npm run build
+        run: npm run build -- --config.extraMetadata.buildNumber=${{ github.run_number }}
         env:
           # Unsigned CI builds; release upload is handled by softprops/action-gh-release.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

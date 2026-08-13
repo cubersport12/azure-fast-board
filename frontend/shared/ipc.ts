@@ -22,6 +22,11 @@ import type {
   WorkItemComment,
   WorkItemDetail,
   WorkItemTypeInfo,
+  MattermostBoardInfo,
+  MattermostBoardCardsResult,
+  MattermostCardImport,
+  MattermostImportCardsInput,
+  AppUpdateCheckResult,
 } from './types'
 
 export const IPC_CHANNELS = {
@@ -77,6 +82,11 @@ export const IPC_CHANNELS = {
   mattermostSearchUsers: 'mattermost:searchUsers',
   mattermostUsersByIds: 'mattermost:usersByIds',
   mattermostShareWorkItem: 'mattermost:shareWorkItem',
+  mattermostListBoards: 'mattermost:listBoards',
+  mattermostListBoardCards: 'mattermost:listBoardCards',
+  mattermostImportCards: 'mattermost:importCards',
+  mattermostLinkCard: 'mattermost:linkCard',
+  mattermostGetImports: 'mattermost:getImports',
   notificationsHistory: 'notifications:history',
   notificationsMarkRead: 'notifications:markRead',
   notificationsMarkReadByWorkItem: 'notifications:markReadByWorkItem',
@@ -91,6 +101,7 @@ export const IPC_CHANNELS = {
   eventWorkItemsInvalidate: 'event:workItemsInvalidate',
   /** Renderer → main terminal logs (DevTools console is easy to miss). */
   debugLog: 'debug:log',
+  appCheckUpdate: 'app:checkUpdate',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -182,6 +193,15 @@ export interface AzureFastBoardApi {
     channelId?: string
     userId?: string
   }) => Promise<{ ok: boolean; message: string }>
+  listMattermostBoards: (teamId: string, channelId: string) => Promise<MattermostBoardInfo[]>
+  listMattermostBoardCards: (boardId: string) => Promise<MattermostBoardCardsResult>
+  importMattermostCards: (input: MattermostImportCardsInput) => Promise<MattermostCardImport[]>
+  linkMattermostCard: (input: {
+    cardId: string
+    workItemId: number
+    boardId: string
+  }) => Promise<MattermostCardImport>
+  getMattermostImports: () => Promise<MattermostCardImport[]>
   getNotificationHistory: () => Promise<BoardNotification[]>
   markNotificationRead: (id: string) => Promise<BoardNotification[]>
   markNotificationsReadByWorkItem: (workItemId: number) => Promise<BoardNotification[]>
@@ -196,4 +216,5 @@ export interface AzureFastBoardApi {
   onWorkItemsInvalidate: (cb: (payload: { reason: string }) => void) => () => void
   /** Print to the Electron main terminal (npm run dev). */
   debugLog: (message: string, data?: unknown) => Promise<void>
+  checkAppUpdate: () => Promise<AppUpdateCheckResult>
 }

@@ -135,11 +135,11 @@ export function WorkItemsPage() {
   if (isLoading) return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Загрузка рабочих элементов…</div>
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <WorkItemFilterBar items={data} filters={filters} onChange={setFilters} />
-      <div className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} рабочих элементов</div>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <div className="grid grid-cols-[70px_1fr_120px_110px_160px_140px_100px_48px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+      <div className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{filtered.length} рабочих элементов</div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <div className="grid shrink-0 grid-cols-[70px_1fr_120px_110px_160px_140px_100px_48px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
           {table.getHeaderGroups()[0]?.headers.map((header) => (
             <button
               key={header.id}
@@ -150,7 +150,7 @@ export function WorkItemsPage() {
             </button>
           ))}
         </div>
-        <div ref={parentRef} className="max-h-[calc(100vh-320px)] overflow-auto">
+        <div ref={parentRef} className="min-h-0 flex-1 overflow-auto">
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index]

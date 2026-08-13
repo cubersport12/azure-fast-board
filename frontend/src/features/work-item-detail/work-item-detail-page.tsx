@@ -21,7 +21,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthenticatedHtml } from '@/components/authenticated-media'
-import { RichTextEditor, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
+import { RichTextEditor, htmlContentEqual, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Input, Label } from '@/components/ui/primitives'
 import { Dropdown } from '@/components/ui/dropdown'
@@ -138,7 +138,11 @@ export function WorkItemDetailPage() {
   }, [workItems, data?.tags, extraTags])
 
   const onTagsChange = useCallback((next: string[]) => {
-    setTags(next)
+    setTags((current) => {
+      if (current.join('\0') === next.join('\0')) return current
+      setDirty(true)
+      return next
+    })
     setExtraTags((current) => {
       const merged = new Set(current.map((t) => t.toLowerCase()))
       for (const tag of next) {
@@ -408,7 +412,7 @@ export function WorkItemDetailPage() {
   const canSaveBody =
     dirty &&
     (title.trim() !== (data?.title ?? '') ||
-      (bodyHtml != null && draftBody !== serverBodyHtml) ||
+      (bodyHtml != null && !htmlContentEqual(draftBody, serverBodyHtml)) ||
       iterationPath !== (data?.iterationPath || '') ||
       areaPath !== (data?.areaPath || '') ||
       assignedTo.trim() !== serverAssignee ||
@@ -441,7 +445,7 @@ export function WorkItemDetailPage() {
       }
 
       let bodySkippedImages = false
-      const bodyChanged = bodyHtml != null && draftBody !== serverBodyHtml
+      const bodyChanged = bodyHtml != null && !htmlContentEqual(draftBody, serverBodyHtml)
       if (bodyChanged) {
         const previousUrls = descriptionImageUrls(serverBodyHtml)
         const nextUrls = descriptionImageUrls(draftBody)
@@ -560,7 +564,7 @@ export function WorkItemDetailPage() {
   const activeType = workItemType || data.type
 
   return (
-    <div className="flex min-h-full flex-col bg-muted/20">
+    <div className="flex h-full min-h-0 flex-col overflow-auto bg-muted/20">
       {/* Sticky Action Header */}
       <header className="sticky top-0 z-20 border-b border-border bg-card/95 px-4 py-2.5 shadow-xs backdrop-blur-xs">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
@@ -579,6 +583,7 @@ export function WorkItemDetailPage() {
                 value={activeType}
                 options={typeOptions}
                 onChange={(next) => {
+                  if (next === workItemType) return
                   setWorkItemType(next)
                   setDirty(true)
                 }}
@@ -727,11 +732,15 @@ export function WorkItemDetailPage() {
                 key={String(workItemId)}
                 value={displayBodyHtml}
                 onChange={(html) => {
+                  if (htmlContentEqual(html, serverBodyHtml)) {
+                    setBodyHtml(null)
+                    return
+                  }
                   if (htmlPlainText(html).length < htmlPlainText(serverBodyHtml).length) {
                     return
                   }
                   setBodyHtml(html)
-                  if (html !== serverBodyHtml) setDirty(true)
+                  setDirty(true)
                 }}
                 onUploadImage={onBodyUpload}
                 placeholder={
@@ -851,6 +860,7 @@ export function WorkItemDetailPage() {
                     value={assignedTo}
                     options={assigneeOptions}
                     onChange={(next) => {
+                      if (next === assignedTo) return
                       setAssignedTo(next)
                       setDirty(true)
                     }}
@@ -877,6 +887,7 @@ export function WorkItemDetailPage() {
                       { value: '4', label: '4 — Низкий (P4)' },
                     ]}
                     onChange={(next) => {
+                      if (next === priority) return
                       setPriority(next)
                       setDirty(true)
                     }}
@@ -910,7 +921,9 @@ export function WorkItemDetailPage() {
                         label: area.name,
                       }))}
                     onChange={(next) => {
-                      setAreaPath(next || rootPath || '')
+                      const value = next || rootPath || ''
+                      if (value === areaPath) return
+                      setAreaPath(value)
                       setDirty(true)
                     }}
                     placeholder="Не указано"
@@ -931,6 +944,7 @@ export function WorkItemDetailPage() {
                     value={iterationPath}
                     options={iterationOptions}
                     onChange={(next) => {
+                      if (next === iterationPath) return
                       setIterationPath(next)
                       setDirty(true)
                     }}

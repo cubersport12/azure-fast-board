@@ -146,6 +146,10 @@ export interface AppSettings {
   selectedIterationPath: string
   /** Last assignee used in quick create (empty = Unassigned). */
   lastAssignee: string
+  lastMattermostTeamId: string
+  lastMattermostChannelId: string
+  lastMattermostBoardId: string
+  lastMattermostImportType: string
   /** Persisted board/list filters; empty arrays = no restriction. */
   filters: {
     types: string[]
@@ -282,6 +286,52 @@ export interface WorkItemDetail extends WorkItem {
   history: Array<{ rev: number; changedDate: string; changedBy: string; fields: Record<string, unknown> }>
   relations: Array<{ rel: string; url: string; attributes?: Record<string, unknown> }>
   fields: Record<string, unknown>
+}
+
+export interface MattermostBoardInfo {
+  id: string
+  title: string
+  channelId?: string
+}
+
+export interface MattermostBoardCard {
+  id: string
+  title: string
+  description: string
+  status: string
+  priority: string
+  tags: string[]
+  /** Inferred Bug/Task for the same color dot as TFS cards. */
+  kind: string
+}
+
+export interface MattermostBoardCardsResult {
+  cards: MattermostBoardCard[]
+  statuses: string[]
+  priorities: string[]
+  tags: string[]
+}
+
+export interface MattermostCardImport {
+  cardId: string
+  workItemId: number
+  boardId: string
+}
+
+export interface MattermostImportCardsInput {
+  boardId: string
+  cardIds: string[]
+  type: string
+  iterationPath?: string
+  assignedTo?: string
+  areaPath?: string
+}
+
+export interface AppUpdateCheckResult {
+  currentLabel: string
+  latestTag: string
+  latestUrl: string
+  hasUpdate: boolean
 }
 
 export interface CreateWorkItemInput {
@@ -445,6 +495,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subscribedIterations: [],
   selectedIterationPath: '',
   lastAssignee: '',
+  lastMattermostTeamId: '',
+  lastMattermostChannelId: '',
+  lastMattermostBoardId: '',
+  lastMattermostImportType: 'Bug',
   filters: {
     types: [],
     states: [],

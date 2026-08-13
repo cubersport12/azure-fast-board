@@ -26,6 +26,7 @@ interface StoreSchema {
   connection: ConnectionConfig | null
   views: SavedView[]
   notificationHistory: BoardNotification[]
+  mattermostCardImports: Record<string, { workItemId: number; boardId: string }>
   cache: {
     workItems: WorkItem[]
     updatedAt?: string
@@ -39,6 +40,7 @@ const store = new Store<StoreSchema>({
     connection: null,
     views: [],
     notificationHistory: [],
+    mattermostCardImports: {},
     cache: { workItems: [] },
   },
 })
@@ -188,6 +190,10 @@ export function getSettings() {
     subscribedIterations,
     selectedIterationPath: normalizeIterationFieldPath(settings.selectedIterationPath),
     lastAssignee: settings.lastAssignee ?? '',
+    lastMattermostTeamId: settings.lastMattermostTeamId ?? '',
+    lastMattermostChannelId: settings.lastMattermostChannelId ?? '',
+    lastMattermostBoardId: settings.lastMattermostBoardId ?? '',
+    lastMattermostImportType: settings.lastMattermostImportType || 'Bug',
     filters: {
       types: settings.filters?.types ?? [],
       states: settings.filters?.states ?? [],
@@ -381,4 +387,31 @@ export function saveNotificationHistory(items: BoardNotification[]) {
   const limited = items.slice(0, Math.max(1, max))
   store.set('notificationHistory', limited)
   return limited
+}
+
+export function getMattermostCardImports(): Record<string, { workItemId: number; boardId: string }> {
+  const raw = store.get('mattermostCardImports')
+  return raw && typeof raw === 'object' ? raw : {}
+}
+
+export function getMattermostCardImport(cardId: string) {
+  const id = cardId.trim()
+  if (!id) return undefined
+  const entry = getMattermostCardImports()[id]
+  if (!entry?.workItemId) return undefined
+  return { cardId: id, workItemId: entry.workItemId, boardId: entry.boardId || '' }
+}
+
+export function saveMattermostCardImport(entry: {
+  cardId: string
+  workItemId: number
+  boardId: string
+}) {
+  const cardId = entry.cardId.trim()
+  const next = {
+    ...getMattermostCardImports(),
+    [cardId]: { workItemId: entry.workItemId, boardId: entry.boardId },
+  }
+  store.set('mattermostCardImports', next)
+  return { cardId, workItemId: entry.workItemId, boardId: entry.boardId }
 }

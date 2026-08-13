@@ -1,14 +1,19 @@
 import {
   Columns3,
+  ExternalLink,
   Keyboard,
+  LayoutGrid,
   ListTodo,
   Plus,
+  RefreshCw,
   Settings2,
   Wifi,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { getAzureApi, requireAzureApi } from '@/lib/azure-api'
+import type { AppUpdateCheckResult } from '../../shared/types'
 import { Input } from '@/components/ui/primitives'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -83,6 +88,12 @@ export function AppShell() {
             label="Рабочие элементы"
             disabled={!ready}
           />
+          <NavItem
+            to="/mattermost-board"
+            icon={<LayoutGrid className="h-4 w-4" />}
+            label="Mattermost board"
+            disabled={!ready}
+          />
           <Separator className="my-1 bg-sidebar-border" />
           <NotificationsBellButton disabled={!ready} />
           <SprintNav disabled={!ready} />
@@ -107,6 +118,7 @@ export function AppShell() {
           >
             <Keyboard className="h-4 w-4" /> Горячие клавиши
           </Button>
+          <AppUpdateButtons />
         </div>
       </aside>
 
@@ -146,7 +158,7 @@ export function AppShell() {
             </Button>
           </div>
         </header>
-        <main className="min-h-0 flex-1 overflow-auto bg-muted/30">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30">
           {checking && (
             <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
               Проверка подключения к Azure DevOps Server…
@@ -176,6 +188,74 @@ export function AppShell() {
       <SendToMattermostDialog />
       <NotificationsDrawer />
     </div>
+  )
+}
+
+const UPDATE_CHECK_MS = 10 * 60 * 1000
+
+function AppUpdateButtons() {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<AppUpdateCheckResult | null>(null)
+  const [error, setError] = useState('')
+  const [checkedManually, setCheckedManually] = useState(false)
+
+  const check = async (silent = false) => {
+    if (!silent) {
+      setBusy(true)
+      setError('')
+      setCheckedManually(true)
+    }
+    try {
+      setResult(await requireAzureApi().checkAppUpdate())
+      setError('')
+    } catch (cause) {
+      if (!silent) {
+        setResult(null)
+        setError(cause instanceof Error ? cause.message : 'Не удалось проверить обновления')
+      }
+    } finally {
+      if (!silent) setBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    void check(true)
+    const id = window.setInterval(() => void check(true), UPDATE_CHECK_MS)
+    return () => window.clearInterval(id)
+  }, [])
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        className="w-full justify-start"
+        disabled={busy}
+        title={result ? `Текущая: ${result.currentLabel}` : undefined}
+        onClick={() => void check()}
+      >
+        <RefreshCw className={cn('h-4 w-4', busy && 'animate-spin')} />
+        {busy ? 'Проверка…' : 'Проверить обновления'}
+      </Button>
+      {result?.hasUpdate ? (
+        <Button
+          size="sm"
+          className="w-full justify-start"
+          title={result.latestTag}
+          onClick={() => void getAzureApi()?.openExternal(result.latestUrl)}
+        >
+          <ExternalLink className="h-4 w-4" />
+          <span className="truncate">Открыть на GitHub</span>
+        </Button>
+      ) : null}
+      {checkedManually && result && !result.hasUpdate ? (
+        <div className="px-3 text-[11px] text-muted-foreground">Актуальная версия</div>
+      ) : null}
+      {error ? (
+        <div className="px-3 text-[11px] text-destructive" title={error}>
+          Не удалось проверить
+        </div>
+      ) : null}
+    </>
   )
 }
 

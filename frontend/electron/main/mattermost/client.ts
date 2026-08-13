@@ -3,8 +3,19 @@ import {
   loadMattermostPassword,
 } from '../credentials'
 import { getConnection, getSettings } from '../store'
-import type { ConnectionConfig, WorkItemDetail } from '../../../shared/types'
+import type {
+  ConnectionConfig,
+  MattermostBoardCardsResult,
+  MattermostBoardInfo,
+  WorkItemDetail,
+} from '../../../shared/types'
 import { buildWorkItemWebUrl } from '../../../shared/utils'
+import {
+  mapFocalboardBoards,
+  mapFocalboardCards,
+  type FocalboardBlock,
+  type FocalboardBoardJson,
+} from './focalboard-map'
 
 export interface MattermostConnectInput {
   baseUrl: string
@@ -36,6 +47,8 @@ interface MmSession {
   userId: string
   username?: string
   insecureTls: boolean
+  cookie: string
+  csrf?: string
 }
 
 function normalizeBaseUrl(raw: string): string {
@@ -63,6 +76,22 @@ function authHeaders(token: string, extra?: Record<string, string>) {
   return {
     Authorization: `Bearer ${token}`,
     ...extra,
+  }
+}
+
+function sessionCookies(token: string, userId: string, setCookie: string | null) {
+  const parts = [`MMAUTHTOKEN=${token}`, `MMUSERID=${userId}`]
+  const csrf = setCookie?.match(/MMCSRF=([^;,\s]+)/i)?.[1]
+  if (csrf) parts.push(`MMCSRF=${csrf}`)
+  return { cookie: parts.join('; '), csrf }
+}
+
+function pluginAuthHeaders(session: MmSession) {
+  return {
+    Authorization: `Bearer ${session.token}`,
+    Cookie: session.cookie,
+    'X-Requested-With': 'XMLHttpRequest',
+    ...(session.csrf ? { 'X-CSRF-Token': session.csrf } : {}),
   }
 }
 
@@ -112,7 +141,16 @@ async function loginSession(overrides?: Partial<MattermostConnectInput>): Promis
   const userId = user.id?.trim()
   if (!userId) throw new Error('Mattermost не вернул id пользователя')
 
-  return { baseUrl, token, userId, username: user.username, insecureTls }
+  const cookies = sessionCookies(token, userId, loginResponse.headers.get('set-cookie'))
+  return {
+    baseUrl,
+    token,
+    userId,
+    username: user.username,
+    insecureTls,
+    cookie: cookies.cookie,
+    csrf: cookies.csrf,
+  }
 }
 
 async function mmFetch(session: MmSession, path: string, init: RequestInit = {}) {
@@ -124,6 +162,51 @@ async function mmFetch(session: MmSession, path: string, init: RequestInit = {})
     apiUrl(session.baseUrl, path),
     { ...init, headers },
     { preferNode: true, insecureTls: session.insecureTls },
+  )
+}
+
+const FOCALBOARD_PREFIXES = [
+  '/plugins/focalboard/api/v2',
+  '/plugins/focalboard/api/v1',
+]
+
+function looksLikeJson(text: string) {
+  const trimmed = text.trim()
+  return trimmed.startsWith('{') || trimmed.startsWith('[')
+}
+
+function snippet(text: string) {
+  return text.replace(/\s+/g, ' ').trim().slice(0, 160)
+}
+
+async function focalboardJson(session: MmSession, path: string): Promise<unknown> {
+  const relative = path.startsWith('/') ? path : `/${path}`
+  const errors: string[] = []
+
+  for (const prefix of FOCALBOARD_PREFIXES) {
+    const url = `${normalizeBaseUrl(session.baseUrl)}${prefix}${relative}`
+    const response = await azureFetch(
+      url,
+      { headers: pluginAuthHeaders(session) },
+      { preferNode: true, insecureTls: session.insecureTls },
+    )
+    const text = await response.text().catch(() => '')
+    if (looksLikeJson(text)) {
+      const json = JSON.parse(text) as unknown
+      if (!response.ok) {
+        const record = json && typeof json === 'object' ? (json as { message?: string }) : null
+        errors.push(`${response.status} ${prefix}: ${record?.message || snippet(text)}`)
+        continue
+      }
+      return json
+    }
+    errors.push(
+      `${response.status} ${prefix}: ${snippet(text) || response.headers.get('content-type') || 'empty'}`,
+    )
+  }
+
+  throw new Error(
+    `Не удалось прочитать Mattermost Boards (${errors.join(' | ')}). Проверьте, что плагин Boards включён.`,
   )
 }
 
@@ -583,4 +666,87 @@ export async function notifyWorkItemCreatedToMattermostIfEnabled(
   if (!result.ok) {
     console.warn('[mattermost] notify on create failed:', result.message)
   }
+}
+
+function asBoardList(raw: unknown): FocalboardBoardJson[] {
+  if (Array.isArray(raw)) return raw as FocalboardBoardJson[]
+  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  if (Array.isArray(record?.boards)) return record.boards as FocalboardBoardJson[]
+  if (Array.isArray(record?.value)) return record.value as FocalboardBoardJson[]
+  return []
+}
+
+function asBlockList(raw: unknown): FocalboardBlock[] {
+  if (Array.isArray(raw)) return raw as FocalboardBlock[]
+  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  if (Array.isArray(record?.blocks)) return record.blocks as FocalboardBlock[]
+  return []
+}
+
+export async function listMattermostBoards(
+  teamId: string,
+  channelId: string,
+): Promise<MattermostBoardInfo[]> {
+  const session = await loginSession()
+  const team = teamId.trim()
+  const channel = channelId.trim()
+  if (!team) throw new Error('Выберите команду Mattermost')
+  if (!channel) throw new Error('Выберите канал Mattermost')
+
+  let all: FocalboardBoardJson[] = []
+  const paths = [
+    `/teams/${encodeURIComponent(team)}/boards`,
+    `/workspaces/${encodeURIComponent(team)}/boards`,
+    '/boards',
+  ]
+  let lastError: unknown
+  for (const path of paths) {
+    try {
+      all = asBoardList(await focalboardJson(session, path))
+      if (all.length) break
+    } catch (error) {
+      lastError = error
+    }
+  }
+  if (!all.length && lastError) throw lastError
+  const forChannel = mapFocalboardBoards(all, channel)
+  return forChannel.length ? forChannel : mapFocalboardBoards(all)
+}
+
+export async function listMattermostBoardCards(boardId: string): Promise<MattermostBoardCardsResult> {
+  const session = await loginSession()
+  const id = boardId.trim()
+  if (!id) throw new Error('Выберите доску Mattermost')
+
+  let board: FocalboardBoardJson | null = null
+  try {
+    board = (await focalboardJson(session, `/boards/${encodeURIComponent(id)}`)) as FocalboardBoardJson
+  } catch {
+    board = null
+  }
+
+  let blocks: FocalboardBlock[] = []
+  try {
+    blocks = asBlockList(await focalboardJson(session, `/boards/${encodeURIComponent(id)}/blocks`))
+  } catch {
+    const cardsRaw = await focalboardJson(session, `/boards/${encodeURIComponent(id)}/cards`)
+    const cards = Array.isArray(cardsRaw)
+      ? cardsRaw
+      : asRecordList(cardsRaw, 'cards')
+    blocks = cards.map((card) => {
+      const record = card as FocalboardBlock & { properties?: Record<string, unknown> }
+      return {
+        ...record,
+        type: record.type || 'card',
+        fields: record.fields || { properties: record.properties || {} },
+      }
+    })
+  }
+
+  return mapFocalboardCards(blocks, board || undefined)
+}
+
+function asRecordList(raw: unknown, key: string): unknown[] {
+  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  return Array.isArray(record?.[key]) ? (record[key] as unknown[]) : []
 }
