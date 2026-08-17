@@ -21,7 +21,7 @@ export const EMPTY_FILTERS: WorkItemFilters = {
 
 export const DEFAULT_FILTERS: WorkItemFilters = {
   types: ['Bug', 'Task'],
-  states: ['Approved', 'New', 'To Do'],
+  states: ['New'],
   assignees: [ME_ASSIGNEE],
   creators: [],
   tags: [],

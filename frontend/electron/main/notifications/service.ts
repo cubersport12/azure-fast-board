@@ -9,7 +9,7 @@ import {
   saveNotificationHistory,
 } from '../store'
 import { clearTaskbarAttention } from './attention'
-import { diffWorkItems } from './diff'
+import { diffWorkItems, dropCreatedBurst, shouldBaselinePoll } from './diff'
 import {
   extractWorkItemIdFromText,
   healNotificationIds,
@@ -46,8 +46,9 @@ export class NotificationService {
   /** In-flight poll mutex (must not reuse `running`). */
   private polling = false
   private ws = new NotificationsWsClient()
-  private wsConnected = false
   private seenEventIds = new Set<string>()
+  /** Dedupe WS + poll for the same work item event (10 min). */
+  private recentDispatchKeys = new Map<string, number>()
   /** Work item ids recently changed by this app — hub events for them are auto-read. */
   private recentSelfActions = new Map<number, number>()
 
@@ -83,6 +84,33 @@ export class NotificationService {
     return true
   }
 
+  private dispatchKey(eventType: string, workItemId?: number | null) {
+    if (!workItemId || !Number.isFinite(workItemId)) return ''
+    return `${eventType.toLowerCase()}:${workItemId}`
+  }
+
+  private rememberDispatch(eventType: string, workItemId?: number | null) {
+    const key = this.dispatchKey(eventType, workItemId)
+    if (!key) return
+    const now = Date.now()
+    this.recentDispatchKeys.set(key, now)
+    for (const [entry, at] of this.recentDispatchKeys) {
+      if (now - at > 10 * 60_000) this.recentDispatchKeys.delete(entry)
+    }
+  }
+
+  private alreadyDispatched(eventType: string, workItemId?: number | null) {
+    const key = this.dispatchKey(eventType, workItemId)
+    if (!key) return false
+    const at = this.recentDispatchKeys.get(key)
+    if (!at) return false
+    if (Date.now() - at > 10 * 60_000) {
+      this.recentDispatchKeys.delete(key)
+      return false
+    }
+    return true
+  }
+
   private historyLimit() {
     return Math.max(1, getSettings().notifications.maxCached || 100)
   }
@@ -100,9 +128,9 @@ export class NotificationService {
     if (!settings.notifications.enabled) return
 
     this.running = true
+    this.snapshot = null
     void this.bootstrapRealtime(settings.notifications.apiUrl)
 
-    // Poll is fallback when WebSocket is unavailable / not configured.
     const tick = () => {
       void this.poll()
     }
@@ -123,7 +151,6 @@ export class NotificationService {
 
     const trimmed = apiUrl.trim()
     if (trimmed && this.ws.matches(trimmed, this.currentProjectId)) {
-      this.wsConnected = true
       return
     }
 
@@ -140,9 +167,6 @@ export class NotificationService {
           }
         })()
       },
-      onStatus: (status) => {
-        this.wsConnected = status.connected
-      },
     })
 
     if (trimmed) {
@@ -157,7 +181,6 @@ export class NotificationService {
     this.running = false
     this.polling = false
     this.ws.stop()
-    this.wsConnected = false
   }
 
   restart() {
@@ -339,6 +362,7 @@ export class NotificationService {
     }
 
     const workItemId = event.workItemId || extractWorkItemIdFromText(event.message)
+    if (this.alreadyDispatched(eventTypeRaw, workItemId)) return
     const selfInitiated = this.isRecentSelfAction(workItemId)
     const draft = healNotificationIds({
       id: event.id || randomUUID(),
@@ -365,6 +389,7 @@ export class NotificationService {
         (selfInitiated ? ' (self)' : ''),
     )
 
+    this.rememberDispatch(eventTypeRaw, workItemId)
     await this.dispatch(draft)
   }
 
@@ -372,9 +397,6 @@ export class NotificationService {
     if (!this.running || this.polling) return
     const settings = getSettings()
     if (!settings.notifications.enabled) return
-
-    // Prefer notifications-api WebSocket when live.
-    if (settings.notifications.apiUrl.trim() && this.wsConnected) return
 
     const client = this.getClient()
     if (!client) return
@@ -385,20 +407,27 @@ export class NotificationService {
       await this.ensureProjectId(client)
 
       const items = await client.listWorkItems()
-      if (this.snapshot === null) {
+      if (!this.running) return
+      if (shouldBaselinePoll(this.snapshot, items.length)) {
         this.snapshot = items
+        console.log(`[notifications] poll baseline ${items.length} items`)
         return
       }
+      if (this.snapshot == null) return
 
-      const changes = diffWorkItems(this.snapshot, items, {
-        onlyAssignedToMe: settings.notifications.onlyAssignedToMe,
-        currentUserUniqueName: this.currentUserUniqueName,
-        currentUserDisplayName: this.currentUserDisplayName,
-        enabledEvents: settings.notifications.events,
-      })
+      const changes = dropCreatedBurst(
+        diffWorkItems(this.snapshot, items, {
+          onlyAssignedToMe: settings.notifications.onlyAssignedToMe,
+          currentUserUniqueName: this.currentUserUniqueName,
+          currentUserDisplayName: this.currentUserDisplayName,
+          enabledEvents: settings.notifications.events,
+        }),
+      )
       this.snapshot = items
 
       for (const change of changes) {
+        if (!this.running) return
+        if (this.alreadyDispatched(change.eventType, change.item.id)) continue
         const selfInitiated = this.isRecentSelfAction(change.item.id)
         const notification: BoardNotification = {
           id: randomUUID(),
@@ -411,6 +440,7 @@ export class NotificationService {
           source: 'poll',
           read: selfInitiated,
         }
+        this.rememberDispatch(change.eventType, change.item.id)
         await this.dispatch(notification)
       }
     } catch (error) {

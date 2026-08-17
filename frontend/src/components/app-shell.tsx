@@ -159,7 +159,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/30">
-          {checking && (
+          {checking && !ready && (
             <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
               Проверка подключения к Azure DevOps Server…
             </div>

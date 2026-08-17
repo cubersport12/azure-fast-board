@@ -109,3 +109,18 @@ export function diffWorkItems(
   void nextMap
   return changes
 }
+
+/** First poll / empty snapshot must not emit "created" for the whole board. */
+export function shouldBaselinePoll(snapshot: WorkItem[] | null, nextCount: number) {
+  if (snapshot == null) return nextCount > 0
+  return snapshot.length === 0 && nextCount > 0
+}
+
+/** ponytail: reconnect/mode-switch can look like N creates; drop that burst. */
+export const CREATE_BURST_LIMIT = 20
+
+export function dropCreatedBurst(changes: WorkItemChange[]): WorkItemChange[] {
+  const created = changes.filter((change) => change.eventType === 'workitem.created').length
+  if (created <= CREATE_BURST_LIMIT) return changes
+  return changes.filter((change) => change.eventType !== 'workitem.created')
+}

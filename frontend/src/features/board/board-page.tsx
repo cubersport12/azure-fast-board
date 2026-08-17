@@ -14,17 +14,18 @@ import { useQueries } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { memo, useMemo, useState } from 'react'
 import type { BoardCardFieldId, BoardColumn, WorkItem } from '../../../shared/types'
+import { boardColumnsFromStates, resolveBoardColumnName } from '../../../shared/board-columns'
 import { BoardCardPresetBar } from '@/components/board-card-preset-bar'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/primitives'
 import {
-  useBoardColumns,
   useConnection,
   useCurrentUser,
   useMoveWorkItem,
   useSettings,
   useWorkItems,
+  useWorkItemTypes,
 } from '@/hooks/use-azure'
 import { usePersistedFilters } from '@/hooks/use-persisted-filters'
 import { getAzureApi } from '@/lib/azure-api'
@@ -33,19 +34,8 @@ import { applyWorkItemFilters } from '@/lib/work-item-filters'
 import { useUiStore } from '@/stores/ui-store'
 import { WorkItemCard } from '@/features/work-items/work-item-card'
 
-/** Map Task "To Do" into the New column (bugs + tasks together). */
-function normalizeBoardColumnName(name: string) {
-  const key = name.trim()
-  if (/^to\s*do$/i.test(key)) return 'New'
-  return key
-}
-
-function columnKey(item: WorkItem) {
-  return normalizeBoardColumnName(item.boardColumn || item.state || 'New')
-}
-
-function isHiddenBoardColumn(name: string) {
-  return /^to\s*do$/i.test(name.trim())
+function columnKey(item: WorkItem, knownStates: string[]) {
+  return resolveBoardColumnName(item.state || item.boardColumn || 'New', knownStates)
 }
 
 const DraggableCard = memo(function DraggableCard({
@@ -147,8 +137,8 @@ const Column = memo(function Column({
 })
 
 export function BoardPage() {
-  const { data: items = [], isLoading } = useWorkItems()
-  const { data: columns = [] } = useBoardColumns()
+  const { data: items = [], isPending } = useWorkItems()
+  const { data: types = [] } = useWorkItemTypes()
   const { data: connection } = useConnection()
   const { data: currentUser } = useCurrentUser()
   const { data: settings } = useSettings()
@@ -220,38 +210,35 @@ export function BoardPage() {
     return map
   }, [commentQueries])
 
-  const displayColumns = useMemo(
-    () =>
-      columns
-        .filter((column) => !isHiddenBoardColumn(column.name))
-        .map((column) =>
-          normalizeBoardColumnName(column.name) === column.name
-            ? column
-            : { ...column, name: normalizeBoardColumnName(column.name) },
-        )
-        // If ADO listed both New and To Do, keep a single New after rename.
-        .filter((column, index, list) => list.findIndex((c) => c.name === column.name) === index),
-    [columns],
+  const knownStates = useMemo(
+    () => [
+      ...new Set(
+        types
+          .filter((entry) => /^(bug|task)$/i.test(entry.name))
+          .flatMap((entry) => entry.states.map((state) => state.name)),
+      ),
+    ],
+    [types],
   )
+
+  const displayColumns = useMemo(() => boardColumnsFromStates(knownStates), [knownStates])
 
   const grouped = useMemo(() => {
     const map = new Map<string, WorkItem[]>()
     for (const column of displayColumns) map.set(column.name, [])
     for (const item of filtered) {
-      const key = columnKey(item)
+      const key = columnKey(item, knownStates)
       if (!map.has(key)) map.set(key, [])
       map.get(key)!.push(item)
     }
     return map
-  }, [filtered, displayColumns])
+  }, [filtered, displayColumns, knownStates])
 
   const extraColumns = useMemo(
     () =>
       [...grouped.entries()]
         .filter(
-          ([name]) =>
-            !isHiddenBoardColumn(name) &&
-            !displayColumns.some((column) => column.name === name),
+          ([name]) => !displayColumns.some((column) => column.name === name),
         )
         .map(([name, columnItems]) => ({ name, columnItems })),
     [grouped, displayColumns],
@@ -268,37 +255,27 @@ export function BoardPage() {
     setActive(null)
     if (!item || !over) return
 
-    let targetColumn = ''
     const overData = over.data.current
-    if (overData?.type === 'column' && overData.column) {
-      targetColumn = String(overData.column)
-    } else if (String(over.id).startsWith('column:')) {
-      targetColumn = String(over.id).replace(/^column:/, '')
-    } else if (String(over.id).startsWith('card-drop:')) {
-      targetColumn = String(overData?.column || '')
-    }
+    const rawTarget =
+      overData?.type === 'column' && overData.column
+        ? String(overData.column)
+        : String(over.id).startsWith('column:')
+          ? String(over.id).replace(/^column:/, '')
+          : String(overData?.column || '')
+    const targetColumn = resolveBoardColumnName(rawTarget, knownStates)
+    if (!targetColumn || columnKey(item, knownStates) === targetColumn) return
 
-    targetColumn = normalizeBoardColumnName(targetColumn)
-    if (!targetColumn || columnKey(item) === targetColumn) return
-
-    const boardColumn =
-      displayColumns.find((entry) => entry.name === targetColumn) ||
-      columns.find((entry) => normalizeBoardColumnName(entry.name) === targetColumn)
-    const mappedState =
-      boardColumn?.stateMappings?.[item.type] ||
-      boardColumn?.stateMappings?.['*'] ||
-      targetColumn
     move.mutate({
       id: item.id,
       column: targetColumn,
       rev: item.rev,
-      state: mappedState,
+      state: targetColumn,
     })
   }
 
   const onDragCancel = () => setActive(null)
 
-  if (isLoading) {
+  if (isPending) {
     return <div className="p-6 text-sm text-muted-foreground">Загрузка доски…</div>
   }
 

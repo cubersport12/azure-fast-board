@@ -77,4 +77,54 @@ describe('hooks → websocket fan-out', () => {
       workItemTitle: 'From hook',
     })
   })
+
+  it('delivers events without projectId to a project-filtered subscriber', async () => {
+    const received = new Promise<Record<string, unknown>>((resolve, reject) => {
+      const socket = new WebSocket(wsUrl)
+      const timer = setTimeout(() => reject(new Error('timeout')), 5000)
+      socket.on('open', () => {
+        socket.send(
+          JSON.stringify({
+            type: 'subscribe',
+            filters: { projectIds: ['proj-guid'], eventTypes: ['workitem.created'] },
+          }),
+        )
+      })
+      socket.on('message', (raw) => {
+        const msg = JSON.parse(String(raw)) as { type?: string; event?: Record<string, unknown> }
+        if (msg.type === 'event' && msg.event) {
+          clearTimeout(timer)
+          socket.close()
+          resolve(msg.event)
+        }
+      })
+      socket.on('error', reject)
+    })
+
+    await new Promise((r) => setTimeout(r, 100))
+
+    const response = await fetch(`${baseUrl}/hooks/azure`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer secret',
+      },
+      body: JSON.stringify({
+        id: 'n2',
+        eventType: 'workitem.created',
+        createdDate: new Date().toISOString(),
+        resource: {
+          id: 77,
+          fields: { 'System.Title': 'No project container' },
+        },
+      }),
+    })
+    expect(response.status).toBe(202)
+
+    const event = await received
+    expect(event).toMatchObject({
+      eventType: 'workitem.created',
+      workItemId: 77,
+    })
+  })
 })

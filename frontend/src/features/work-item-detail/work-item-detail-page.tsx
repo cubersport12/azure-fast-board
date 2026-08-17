@@ -104,6 +104,7 @@ export function WorkItemDetailPage() {
   const [extraTags, setExtraTags] = useState<string[]>([])
   const [priority, setPriority] = useState('')
   const [workItemType, setWorkItemType] = useState('')
+  const [itemState, setItemState] = useState('')
   const [people, setPeople] = useState<AssigneeIdentity[]>([])
   const [searching, setSearching] = useState(false)
   const searchTimer = useRef<number | null>(null)
@@ -229,6 +230,7 @@ export function WorkItemDetailPage() {
     setExtraTags([])
     setPriority('')
     setWorkItemType('')
+    setItemState('')
     setComment('')
     setStatus(null)
   }, [workItemId])
@@ -243,6 +245,7 @@ export function WorkItemDetailPage() {
     setTags(data.tags ?? [])
     setPriority(data.priority != null ? String(data.priority) : '')
     setWorkItemType(data.type || '')
+    setItemState(data.state || '')
   }, [data, dirty, serverBodyHtml])
 
   useEffect(() => {
@@ -334,10 +337,11 @@ export function WorkItemDetailPage() {
     const typeInfo = types.find((entry) => entry.name === typeName)
     const fromType = typeInfo?.states.map((entry) => entry.name) ?? []
     if (fromType.length) {
-      return fromType.includes(data.state) ? fromType : [data.state, ...fromType]
+      const current = itemState || data.state
+      return fromType.includes(current) ? fromType : [current, ...fromType]
     }
-    return data.state ? [data.state] : []
-  }, [data, types, workItemType])
+    return itemState || data.state ? [itemState || data.state] : []
+  }, [data, types, workItemType, itemState])
 
   const typeOptions = useMemo(() => {
     const mapped = types.map((entry) => ({ value: entry.name, label: entry.name }))
@@ -418,7 +422,8 @@ export function WorkItemDetailPage() {
       assignedTo.trim() !== serverAssignee ||
       draftTags !== serverTags ||
       priority !== serverPriority ||
-      workItemType !== (data?.type || ''))
+      workItemType !== (data?.type || '') ||
+      (itemState || data?.state || '') !== (data?.state || ''))
 
   const handleCancel = () => {
     if (!data) return
@@ -430,6 +435,7 @@ export function WorkItemDetailPage() {
     setTags(data.tags ?? [])
     setPriority(data.priority != null ? String(data.priority) : '')
     setWorkItemType(data.type || '')
+    setItemState(data.state || '')
     setDirty(false)
     setStatus(null)
   }
@@ -496,6 +502,10 @@ export function WorkItemDetailPage() {
       if (workItemType && workItemType !== data.type) {
         fields['System.WorkItemType'] = workItemType
       }
+      const nextState = (itemState || data.state).trim()
+      if (nextState && nextState !== data.state) {
+        fields['System.State'] = nextState
+      }
 
       if (!Object.keys(fields).length) {
         setDirty(false)
@@ -529,20 +539,6 @@ export function WorkItemDetailPage() {
       ? data.url
       : buildWorkItemWebUrl(connection, data.id)
     await getAzureApi()?.openExternal(url)
-  }
-
-  const changeState = async (state: string) => {
-    if (!data || state === data.state) return
-    try {
-      await update.mutateAsync({
-        id: data.id,
-        rev: data.rev,
-        fields: { 'System.State': state },
-      })
-      setStatus(`Состояние: ${state}`)
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Не удалось сменить состояние')
-    }
   }
 
   const copyId = () => {
@@ -597,12 +593,16 @@ export function WorkItemDetailPage() {
             {/* State selector */}
             <Dropdown
               id="work-item-detail-state"
-              value={data.state}
+              value={itemState || data.state}
               options={stateOptions}
-              onChange={(next) => void changeState(next)}
+              onChange={(next) => {
+                if (next === (itemState || data.state)) return
+                setItemState(next)
+                setDirty(true)
+              }}
               searchable={false}
               allowEmpty={false}
-              disabled={update.isPending || stateOptions.length === 0}
+              disabled={savingBody || stateOptions.length === 0}
               className="w-40"
             />
           </div>

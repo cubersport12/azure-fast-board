@@ -20,7 +20,7 @@ import { formatRelative, workItemColor, cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui-store'
 
 export function WorkItemsPage() {
-  const { data = [], isLoading } = useWorkItems()
+  const { data = [], isPending } = useWorkItems()
   const { data: connection } = useConnection()
   const { data: currentUser } = useCurrentUser()
   const { data: settings } = useSettings()
@@ -132,7 +132,7 @@ export function WorkItemsPage() {
     overscan: 12,
   })
 
-  if (isLoading) return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Загрузка рабочих элементов…</div>
+  if (isPending) return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Загрузка рабочих элементов…</div>
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">

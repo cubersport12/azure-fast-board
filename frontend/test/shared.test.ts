@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { IPC_CHANNELS } from '../shared/ipc'
 import { DEFAULT_SETTINGS } from '../shared/types'
 import {
+  boardColumnsFromStates,
+  columnStateFallback,
+  resolveBoardColumnName,
+} from '../shared/board-columns'
+import {
   findWorkItemByTitle,
   mmCardTag,
   cardIdFromMmTag,
@@ -25,6 +30,22 @@ describe('shared contracts', () => {
     expect(IPC_CHANNELS.iterationPaths).toBe('meta:iterationPaths')
     expect(IPC_CHANNELS.mattermostLinkCard).toBe('mattermost:linkCard')
     expect(IPC_CHANNELS.appCheckUpdate).toBe('app:checkUpdate')
+  })
+
+  it('maps Bug and Task states onto the same board columns', () => {
+    const columns = boardColumnsFromStates(['New', 'InProgress', 'Commited', 'Done', 'Removed'])
+    expect(columns.map((column) => column.name)).toEqual([
+      'New',
+      'InProgress',
+      'Commited',
+      'Done',
+      'Removed',
+    ])
+    expect(resolveBoardColumnName('In Progress', ['InProgress'])).toBe('InProgress')
+    expect(resolveBoardColumnName('Committed', ['Commited'])).toBe('Commited')
+    expect(resolveBoardColumnName('To Do')).toBe('New')
+    expect(columnStateFallback('In Progress')).toBe('InProgress')
+    expect(columnStateFallback('Committed')).toBe('Commited')
   })
 
   it('compares GitHub release tags against the local build', () => {

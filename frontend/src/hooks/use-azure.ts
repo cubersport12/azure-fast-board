@@ -36,6 +36,7 @@ export function useWorkItems() {
     queryFn: () => requireAzureApi().listWorkItems(),
     enabled: ready,
     refetchInterval: ready ? 30_000 : false,
+    placeholderData: (previous) => previous,
   })
 }
 
