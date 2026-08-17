@@ -11,6 +11,7 @@ import type {
   SyncStatus,
   WorkItemDetail,
 } from '../../shared/types'
+import { columnStateFallback } from '../../shared/board-columns'
 import { AzureClient } from './azure/client'
 import { applyInsecureTls } from './azure/http'
 import {
@@ -103,14 +104,6 @@ function requireClient() {
     throw new Error('Подключение к Azure DevOps Server не настроено')
   }
   return client
-}
-
-function columnStateFallback(column: string) {
-  const lower = column.toLowerCase()
-  if (lower.includes('done') || lower.includes('closed')) return 'Closed'
-  if (lower.includes('resolve')) return 'Resolved'
-  if (lower.includes('active') || lower.includes('progress')) return 'Active'
-  return 'New'
 }
 
 function normalizeServerUrl(value: string) {
@@ -414,9 +407,13 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   })
 
   ipcMain.handle(IPC_CHANNELS.workItemsUpdate, async (_e, input: PatchWorkItemInput) => {
-    const updated = await requireClient().updateWorkItem(input)
-    notificationService?.noteSelfAction(updated.id)
-    return updated
+    try {
+      const updated = await requireClient().updateWorkItem(input)
+      notificationService?.noteSelfAction(updated.id)
+      return updated
+    } catch (error) {
+      throw toIpcError(error)
+    }
   })
 
   ipcMain.handle(

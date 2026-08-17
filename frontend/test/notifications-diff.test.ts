@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { diffWorkItems } from '../electron/main/notifications/diff'
+import {
+  CREATE_BURST_LIMIT,
+  diffWorkItems,
+  dropCreatedBurst,
+  shouldBaselinePoll,
+} from '../electron/main/notifications/diff'
 import type { WorkItem } from '../shared/types'
 
 function item(partial: Partial<WorkItem> & Pick<WorkItem, 'id' | 'title'>): WorkItem {
@@ -89,5 +94,22 @@ describe('diffWorkItems', () => {
     })
     expect(changes.some((c) => c.eventType === 'workitem.assigned')).toBe(true)
     expect(changes.some((c) => c.eventType === 'workitem.updated')).toBe(true)
+  })
+
+  it('baselines empty/missing snapshots instead of treating the board as created', () => {
+    expect(shouldBaselinePoll(null, 0)).toBe(false)
+    expect(shouldBaselinePoll(null, 40)).toBe(true)
+    expect(shouldBaselinePoll([], 40)).toBe(true)
+    expect(shouldBaselinePoll([item({ id: 1, title: 'Existing' })], 40)).toBe(false)
+  })
+
+  it('drops a created burst after reconnect', () => {
+    const burst = Array.from({ length: CREATE_BURST_LIMIT + 1 }, (_, index) => ({
+      eventType: 'workitem.created' as const,
+      item: item({ id: index + 1, title: `Card ${index + 1}` }),
+      summary: `Создан #${index + 1}`,
+    }))
+    expect(dropCreatedBurst(burst)).toEqual([])
+    expect(dropCreatedBurst(burst.slice(0, 2))).toHaveLength(2)
   })
 })

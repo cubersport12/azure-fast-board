@@ -25,6 +25,7 @@ import {
   normalizeIterationFieldPath,
   replaceIterationPathLeaf,
 } from '../../../shared/utils'
+import { boardColumnsFromStates } from '../../../shared/board-columns'
 import { AzureDevOpsError } from './errors'
 import { applyInsecureTls, azureFetch, formatNetworkError } from './http'
 
@@ -1524,9 +1525,9 @@ export class AzureClient {
       }))
     } catch {
       return [
-        { name: 'Bug', states: [{ name: 'New' }, { name: 'Active' }, { name: 'Resolved' }, { name: 'Closed' }], fields: [] },
-        { name: 'Task', states: [{ name: 'To Do' }, { name: 'In Progress' }, { name: 'Done' }], fields: [] },
-        { name: 'User Story', states: [{ name: 'New' }, { name: 'Active' }, { name: 'Resolved' }, { name: 'Closed' }], fields: [] },
+        { name: 'Bug', states: [{ name: 'New' }, { name: 'InProgress' }, { name: 'Commited' }, { name: 'Done' }, { name: 'Removed' }], fields: [] },
+        { name: 'Task', states: [{ name: 'New' }, { name: 'InProgress' }, { name: 'Commited' }, { name: 'Done' }, { name: 'Removed' }], fields: [] },
+        { name: 'User Story', states: [{ name: 'New' }, { name: 'InProgress' }, { name: 'Commited' }, { name: 'Done' }, { name: 'Removed' }], fields: [] },
       ]
     }
   }
@@ -1671,12 +1672,7 @@ export class AzureClient {
 }
 
 function defaultColumns(): BoardColumn[] {
-  return [
-    { id: 'new', name: 'New', order: 0 },
-    { id: 'active', name: 'Active', order: 1 },
-    { id: 'resolved', name: 'Resolved', order: 2 },
-    { id: 'closed', name: 'Closed', order: 3 },
-  ]
+  return boardColumnsFromStates()
 }
 
 export function createDemoWorkItems(): WorkItem[] {

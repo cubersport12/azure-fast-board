@@ -36,8 +36,8 @@ function extractToken(req: IncomingMessage) {
 }
 
 function matchesFilters(client: ClientState, event: BoardRealtimeEvent) {
-  if (client.projectIds && client.projectIds.size > 0) {
-    if (!event.projectId || !client.projectIds.has(event.projectId.toLowerCase())) {
+  if (client.projectIds && client.projectIds.size > 0 && event.projectId) {
+    if (!client.projectIds.has(event.projectId.toLowerCase())) {
       return false
     }
   }

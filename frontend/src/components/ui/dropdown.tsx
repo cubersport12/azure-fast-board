@@ -285,8 +285,9 @@ export function Dropdown(props: DropdownProps) {
 
   const chooseSingle = (next: string) => {
     if (multiple) return
-    props.onChange(next)
     setOpen(false)
+    if (next === props.value) return
+    props.onChange(next)
   }
 
   const toggleMulti = (optionValue: string) => {
