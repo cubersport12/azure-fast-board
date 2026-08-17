@@ -1,11 +1,11 @@
 /** Shared Bug/Task board columns after process alignment. */
-const BOARD_COLUMN_SLOTS = [
+const BOARD_COLUMN_SLOTS: Array<{ id: string; label: string; aliases: string[] }> = [
   { id: 'new', label: 'New', aliases: ['new', 'todo', 'approved'] },
   { id: 'inprogress', label: 'InProgress', aliases: ['inprogress', 'active'] },
   { id: 'committed', label: 'Commited', aliases: ['commited', 'committed'] },
   { id: 'done', label: 'Done', aliases: ['done', 'closed', 'resolved', 'completed'] },
   { id: 'removed', label: 'Removed', aliases: ['removed'] },
-] as const
+]
 
 export function normalizeStateKey(name: string) {
   return name.trim().toLowerCase().replace(/[\s_-]+/g, '')
