@@ -94,7 +94,7 @@ export interface EmailNotificationProviderSettings {
 
 export interface NotificationSettings {
   enabled: boolean
-  /** Only notify about items assigned to the current user (and new assignments). */
+  /** Only notify when the current user is assignee or author. */
   onlyAssignedToMe: boolean
   /**
    * Base URL of notifications-api (e.g. http://host:8787).

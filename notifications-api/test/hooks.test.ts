@@ -17,6 +17,7 @@ describe('mapServiceHookPayload', () => {
           'System.WorkItemType': 'Bug',
           'System.State': 'Active',
           'System.AssignedTo': { displayName: 'Alex', uniqueName: 'alex@corp.local' },
+          'System.CreatedBy': { displayName: 'Sam', uniqueName: 'sam@corp.local' },
         },
       },
       resourceContainers: {
@@ -35,6 +36,8 @@ describe('mapServiceHookPayload', () => {
       workItemState: 'Active',
       assignedTo: 'Alex',
       assignedToUniqueName: 'alex@corp.local',
+      createdBy: 'Sam',
+      createdByUniqueName: 'sam@corp.local',
       projectId: 'proj-guid',
       collectionId: 'col-guid',
     })
@@ -82,6 +85,38 @@ describe('mapServiceHookPayload', () => {
     })
     expect(event?.workItemId).toBe(25201)
     expect(event?.commentId).toBeUndefined()
+  })
+
+  it('reads type and title from revision on workitem.updated delta', () => {
+    const event = mapServiceHookPayload({
+      eventType: 'workitem.updated',
+      message: { text: 'Bug 101 updated' },
+      resource: {
+        id: 101,
+        workItemId: 101,
+        fields: {
+          'System.Title': { oldValue: 'Old', newValue: 'Broken build' },
+          'System.Rev': { oldValue: 3, newValue: 4 },
+        },
+        revision: {
+          id: 101,
+          fields: {
+            'System.Id': 101,
+            'System.Title': 'Broken build',
+            'System.WorkItemType': 'Bug',
+            'System.State': 'Active',
+          },
+        },
+      },
+    })
+
+    expect(event).toMatchObject({
+      eventType: 'workitem.updated',
+      workItemId: 101,
+      workItemTitle: 'Broken build',
+      workItemType: 'Bug',
+      workItemState: 'Active',
+    })
   })
 
   it('returns null without eventType', () => {

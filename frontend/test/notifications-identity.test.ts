@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { anyIdentityMatch, identityMatches, identityTokens } from '../electron/main/notifications/identity'
+import {
+  anyIdentityMatch,
+  identityMatches,
+  identityTokens,
+  isRelevantToMe,
+} from '../electron/main/notifications/identity'
 
 describe('notification identity matching', () => {
   it('parses ADO display form Name <DOMAIN\\user>', () => {
@@ -28,5 +33,19 @@ describe('notification identity matching', () => {
     expect(
       anyIdentityMatch(['ZAV\\ivanovaa'], ['Артеменко Юрий <ZAV\\artimenko>']),
     ).toBe(false)
+  })
+
+  it('treats assignee or author as relevant', () => {
+    const me = { uniqueName: 'ZAV\\ivanovaa', displayName: 'Иванов' }
+    expect(
+      isRelevantToMe(me, { assignedToUniqueName: 'ZAV\\ivanovaa', createdByUniqueName: 'other' }),
+    ).toBe(true)
+    expect(
+      isRelevantToMe(me, { assignedToUniqueName: 'other', createdByUniqueName: 'ZAV\\ivanovaa' }),
+    ).toBe(true)
+    expect(
+      isRelevantToMe(me, { assignedToUniqueName: 'other', createdByUniqueName: 'other' }),
+    ).toBe(false)
+    expect(isRelevantToMe(me, {})).toBeNull()
   })
 })

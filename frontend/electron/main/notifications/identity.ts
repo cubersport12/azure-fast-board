@@ -39,3 +39,32 @@ export function anyIdentityMatch(left: Array<string | null | undefined>, right: 
   const b = right.flatMap((value) => identityTokens(value))
   return a.some((x) => b.some((y) => identityMatches(x, y)))
 }
+
+export type NotificationIdentity = {
+  uniqueName?: string
+  displayName?: string
+}
+
+export type NotificationPeople = {
+  assignedTo?: string
+  assignedToUniqueName?: string
+  createdBy?: string
+  createdByUniqueName?: string
+}
+
+/**
+ * Assignee or author is the current user.
+ * null = not enough identity to decide (show the notification).
+ */
+export function isRelevantToMe(
+  me: NotificationIdentity,
+  people: NotificationPeople,
+): boolean | null {
+  const mine = [me.uniqueName, me.displayName]
+  if (!mine.some((value) => value?.trim())) return null
+  const assignees = [people.assignedToUniqueName, people.assignedTo]
+  const authors = [people.createdByUniqueName, people.createdBy]
+  if (![...assignees, ...authors].some((value) => value?.trim())) return null
+  if (anyIdentityMatch(mine, assignees) || anyIdentityMatch(mine, authors)) return true
+  return false
+}

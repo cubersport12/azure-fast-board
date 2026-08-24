@@ -16,6 +16,8 @@ export interface BoardRealtimeEvent {
   commentId?: number
   assignedTo?: string
   assignedToUniqueName?: string
+  createdBy?: string
+  createdByUniqueName?: string
   message?: string
   /** Original Azure DevOps payload (trimmed). */
   resource?: unknown

@@ -4,10 +4,11 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type Row,
   type SortingState,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { WorkItem } from '../../../shared/types'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
@@ -19,6 +20,11 @@ import { applyWorkItemFilters } from '@/lib/work-item-filters'
 import { formatRelative, workItemColor, cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui-store'
 
+const ROW_HEIGHT = 44
+const VIRTUALIZE_AFTER = 80
+const ROW_GRID =
+  'grid-cols-[70px_1fr_120px_110px_160px_140px_100px_48px]'
+
 export function WorkItemsPage() {
   const { data = [], isPending } = useWorkItems()
   const { data: connection } = useConnection()
@@ -28,7 +34,6 @@ export function WorkItemsPage() {
   const { filters, setFilters } = usePersistedFilters()
   const navigate = useNavigate()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'changedDate', desc: true }])
-  const parentRef = useRef<HTMLDivElement>(null)
 
   const me = useMemo(
     () => ({
@@ -125,12 +130,6 @@ export function WorkItemsPage() {
   })
 
   const rows = table.getRowModel().rows
-  const virtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 44,
-    overscan: 12,
-  })
 
   if (isPending) return <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Загрузка рабочих элементов…</div>
 
@@ -139,7 +138,7 @@ export function WorkItemsPage() {
       <WorkItemFilterBar items={data} filters={filters} onChange={setFilters} />
       <div className="shrink-0 text-sm text-slate-500 dark:text-slate-400">{filtered.length} рабочих элементов</div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-        <div className="grid shrink-0 grid-cols-[70px_1fr_120px_110px_160px_140px_100px_48px] border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+        <div className={cn('grid shrink-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400', ROW_GRID)}>
           {table.getHeaderGroups()[0]?.headers.map((header) => (
             <button
               key={header.id}
@@ -150,29 +149,85 @@ export function WorkItemsPage() {
             </button>
           ))}
         </div>
-        <div ref={parentRef} className="min-h-0 flex-1 overflow-auto">
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index]
-              return (
-                <button
-                  key={row.id}
-                  type="button"
-                  onClick={() => navigate(`/work-items/${row.original.id}`)}
-                  className="absolute left-0 grid w-full grid-cols-[70px_1fr_120px_110px_160px_140px_100px_48px] border-b border-slate-100 px-3 text-left text-sm hover:bg-sky-50 dark:border-slate-800 dark:hover:bg-sky-950/40"
-                  style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <div key={cell.id} className="flex items-center truncate py-2">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </div>
-                  ))}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        <WorkItemsRows rows={rows} onOpen={(id) => navigate(`/work-items/${id}`)} />
       </div>
+    </div>
+  )
+}
+
+function WorkItemRow({
+  row,
+  onOpen,
+  style,
+  virtualized,
+}: {
+  row: Row<WorkItem>
+  onOpen: (id: number) => void
+  style?: CSSProperties
+  virtualized?: boolean
+}) {
+  return (
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => onOpen(row.original.id)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        onOpen(row.original.id)
+      }}
+      className={cn(
+        'grid w-full cursor-pointer border-b border-slate-100 px-3 text-left text-sm hover:bg-sky-50 dark:border-slate-800 dark:hover:bg-sky-950/40',
+        ROW_GRID,
+        virtualized && 'absolute left-0',
+      )}
+      style={style}
+    >
+      {row.getVisibleCells().map((cell) => (
+        <div key={cell.id} className="flex items-center truncate py-2">
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function WorkItemsRows({
+  rows,
+  onOpen,
+}: {
+  rows: Row<WorkItem>[]
+  onOpen: (id: number) => void
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const shouldVirtualize = rows.length > VIRTUALIZE_AFTER
+  const virtualizer = useVirtualizer({
+    count: shouldVirtualize ? rows.length : 0,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 6,
+  })
+
+  return (
+    <div ref={parentRef} className="min-h-0 flex-1 overflow-auto">
+      {shouldVirtualize ? (
+        <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index]
+            return (
+              <WorkItemRow
+                key={row.id}
+                row={row}
+                onOpen={onOpen}
+                virtualized
+                style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
+              />
+            )
+          })}
+        </div>
+      ) : (
+        rows.map((row) => <WorkItemRow key={row.id} row={row} onOpen={onOpen} />)
+      )}
     </div>
   )
 }
