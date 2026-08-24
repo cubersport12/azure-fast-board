@@ -1,0 +1,56 @@
+/** Sentinel copied from UI filters — keep in sync with work-item-filters ME_ASSIGNEE. */
+export const WIQL_ME = 'Me'
+export const WIQL_UNASSIGNED = 'Unassigned'
+
+export interface WorkItemListQuery {
+  iterationPath?: string
+  types?: string[]
+  states?: string[]
+  assignees?: string[]
+  creators?: string[]
+  tags?: string[]
+  /** Poll: assigned to me or created by me (OR). */
+  meOrAuthor?: boolean
+}
+
+function quote(value: string) {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+function inClause(field: string, values?: string[]) {
+  const list = (values ?? []).map((value) => value.trim()).filter(Boolean)
+  if (!list.length) return ''
+  if (list.length === 1) return ` AND [${field}] = ${quote(list[0])}`
+  return ` AND [${field}] IN (${list.map(quote).join(', ')})`
+}
+
+function peopleClause(field: string, values?: string[]) {
+  const list = (values ?? []).map((value) => value.trim()).filter(Boolean)
+  if (!list.length) return ''
+  const parts = list.map((value) => {
+    if (value === WIQL_ME) return `[${field}] = @Me`
+    if (value === WIQL_UNASSIGNED) return `[${field}] = ''`
+    return `[${field}] = ${quote(value)}`
+  })
+  if (parts.length === 1) return ` AND ${parts[0]}`
+  return ` AND (${parts.join(' OR ')})`
+}
+
+export function buildWorkItemsWiql(query: WorkItemListQuery = {}) {
+  let wiql = 'Select [System.Id] From WorkItems Where [System.TeamProject] = @project'
+  const iteration = query.iterationPath?.trim()
+  if (iteration) wiql += ` AND [System.IterationPath] UNDER ${quote(iteration)}`
+  wiql += inClause('System.WorkItemType', query.types)
+  wiql += inClause('System.State', query.states)
+  if (query.meOrAuthor) {
+    wiql += ' AND ([System.AssignedTo] = @Me OR [System.CreatedBy] = @Me)'
+  } else {
+    wiql += peopleClause('System.AssignedTo', query.assignees)
+    wiql += peopleClause('System.CreatedBy', query.creators)
+  }
+  const tags = (query.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
+  if (tags.length) {
+    wiql += ` AND (${tags.map((tag) => `[System.Tags] CONTAINS ${quote(tag)}`).join(' OR ')})`
+  }
+  return `${wiql} Order By [System.ChangedDate] Desc`
+}

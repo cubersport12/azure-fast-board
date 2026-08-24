@@ -20,8 +20,6 @@ import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/primitives'
 import {
-  useConnection,
-  useCurrentUser,
   useMoveWorkItem,
   useSettings,
   useWorkItems,
@@ -30,7 +28,7 @@ import {
 import { usePersistedFilters } from '@/hooks/use-persisted-filters'
 import { getAzureApi } from '@/lib/azure-api'
 import { fieldsForPreset, stripHtmlPreview } from '@/lib/board-card-presets'
-import { applyWorkItemFilters } from '@/lib/work-item-filters'
+import { applyWorkItemFilters, EMPTY_FILTERS } from '@/lib/work-item-filters'
 import { useUiStore } from '@/stores/ui-store'
 import { WorkItemCard } from '@/features/work-items/work-item-card'
 
@@ -139,8 +137,6 @@ const Column = memo(function Column({
 export function BoardPage() {
   const { data: items = [], isPending } = useWorkItems()
   const { data: types = [] } = useWorkItemTypes()
-  const { data: connection } = useConnection()
-  const { data: currentUser } = useCurrentUser()
   const { data: settings } = useSettings()
   const move = useMoveWorkItem()
   const search = useUiStore((s) => s.search)
@@ -163,25 +159,9 @@ export function BoardPage() {
     }),
   )
 
-  const me = useMemo(
-    () => ({
-      username: connection?.username,
-      displayName: currentUser?.displayName,
-      uniqueName: currentUser?.uniqueName,
-    }),
-    [connection?.username, currentUser?.displayName, currentUser?.uniqueName],
-  )
-
   const filtered = useMemo(
-    () =>
-      applyWorkItemFilters(
-        items,
-        search,
-        filters,
-        me,
-        settings?.selectedIterationPath,
-      ),
-    [items, search, filters, me, settings?.selectedIterationPath],
+    () => applyWorkItemFilters(items, search, EMPTY_FILTERS),
+    [items, search],
   )
 
   const needComments = visibleFields.has('comments')

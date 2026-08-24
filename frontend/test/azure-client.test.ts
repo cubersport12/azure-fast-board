@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   azureBasicAuthHeader,
   createDemoWorkItems,
+  defaultWorkItemsWiql,
   mapWorkItem,
   normalizePatSecret,
 } from '../electron/main/azure/client'
@@ -64,6 +65,16 @@ describe('service hook mapping helpers', () => {
     }
     expect(body.consumerId).toBe('webHooks')
     expect(body.eventType).toBe('workitem.updated')
+  })
+})
+
+describe('defaultWorkItemsWiql', () => {
+  it('scopes to the selected iteration when set', () => {
+    expect(defaultWorkItemsWiql('Project\\Sprint 1')).toContain(
+      "[System.IterationPath] UNDER 'Project\\Sprint 1'",
+    )
+    expect(defaultWorkItemsWiql("O'Brien")).toContain("UNDER 'O''Brien'")
+    expect(defaultWorkItemsWiql('')).not.toContain('IterationPath')
   })
 })
 

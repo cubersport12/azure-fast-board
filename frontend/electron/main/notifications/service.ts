@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { IPC_CHANNELS } from '../../../shared/ipc'
 import type { BoardNotification, NotificationEventType, WorkItem } from '../../../shared/types'
 import type { AzureClient } from '../azure/client'
+import { buildWorkItemsWiql } from '../../../shared/work-item-wiql'
 import {
   getConnection,
   getNotificationHistory,
@@ -393,7 +394,12 @@ export class NotificationService {
       await this.ensureIdentity(client)
       await this.ensureProjectId(client)
 
-      const items = await client.listWorkItems()
+      const items = await client.listWorkItems(
+        buildWorkItemsWiql({
+          iterationPath: settings.selectedIterationPath,
+          meOrAuthor: settings.notifications.onlyAssignedToMe,
+        }),
+      )
       if (!this.running) return
       if (shouldBaselinePoll(this.snapshot, items.length)) {
         this.snapshot = items

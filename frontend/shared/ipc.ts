@@ -28,6 +28,7 @@ import type {
   MattermostImportCardsInput,
   AppUpdateCheckResult,
 } from './types'
+import type { WorkItemListQuery } from './work-item-wiql'
 
 export const IPC_CHANNELS = {
   settingsGet: 'settings:get',
@@ -123,7 +124,7 @@ export interface AzureFastBoardApi {
   listTeams: (
     creds: ConnectionCredentials & { collection: string; project: string },
   ) => Promise<NamedEntity[]>
-  listWorkItems: (query?: string) => Promise<WorkItem[]>
+  listWorkItems: (query?: WorkItemListQuery | string) => Promise<WorkItem[]>
   getWorkItem: (id: number) => Promise<WorkItemDetail>
   createWorkItem: (input: CreateWorkItemInput) => Promise<WorkItem>
   updateWorkItem: (input: PatchWorkItemInput) => Promise<WorkItem>

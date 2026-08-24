@@ -26,6 +26,7 @@ import {
   replaceIterationPathLeaf,
 } from '../../../shared/utils'
 import { boardColumnsFromStates } from '../../../shared/board-columns'
+import { buildWorkItemsWiql } from '../../../shared/work-item-wiql'
 import { AzureDevOpsError } from './errors'
 import { applyInsecureTls, azureFetch, formatNetworkError } from './http'
 
@@ -117,6 +118,10 @@ export function azureBasicAuthHeader(
   return `Basic ${Buffer.from(`${user}:${token}`).toString('base64')}`
 }
 
+export function defaultWorkItemsWiql(iterationPath?: string) {
+  return buildWorkItemsWiql({ iterationPath })
+}
+
 export function mapWorkItem(raw: RawWorkItem): WorkItem {
   const fields = raw.fields ?? {}
   return {
@@ -157,6 +162,7 @@ export class AzureClient {
   private insecureTls: boolean
   private username: string
   private authMethod: 'pat' | 'password'
+  private listInflight = new Map<string, Promise<WorkItem[]>>()
 
   constructor(options: ClientOptions) {
     this.connection = options.connection
@@ -711,10 +717,18 @@ export class AzureClient {
   }
 
   async listWorkItems(wiql?: string): Promise<WorkItem[]> {
-    const query =
-      wiql ||
-      `Select [System.Id] From WorkItems Where [System.TeamProject] = @project Order By [System.ChangedDate] Desc`
+    const query = wiql || defaultWorkItemsWiql()
+    const pending = this.listInflight.get(query)
+    if (pending) return pending
 
+    const fetch = this.fetchWorkItems(query).finally(() => {
+      this.listInflight.delete(query)
+    })
+    this.listInflight.set(query, fetch)
+    return fetch
+  }
+
+  private async fetchWorkItems(query: string): Promise<WorkItem[]> {
     // TFS/on-prem WIQL defaults to 200 without $top. 20000 is the Azure ceiling.
     const idsPayload = await this.request<{ workItems: Array<{ id: number }> }>(
       this.api('/_apis/wit/wiql?$top=20000'),
@@ -1160,17 +1174,15 @@ export class AzureClient {
       // Fall back to identities from recent work items below.
     }
 
-    try {
-      const items = await this.listWorkItems()
-      for (const item of items) {
+    if (!people.length) {
+      const { getCachedWorkItems } = await import('../store')
+      for (const item of getCachedWorkItems().workItems ?? []) {
         if (!item.assignedTo) continue
         people.push({
           displayName: item.assignedTo,
           uniqueName: item.assignedToUniqueName,
         })
       }
-    } catch {
-      // ignore
     }
 
     if (this.username) {

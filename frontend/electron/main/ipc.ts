@@ -13,6 +13,7 @@ import type {
 } from '../../shared/types'
 import { columnStateFallback } from '../../shared/board-columns'
 import { AzureClient } from './azure/client'
+import { buildWorkItemsWiql, type WorkItemListQuery } from '../../shared/work-item-wiql'
 import { applyInsecureTls } from './azure/http'
 import {
   clearSecrets,
@@ -358,11 +359,19 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
     },
   )
 
-  ipcMain.handle(IPC_CHANNELS.workItemsList, async (event, query?: string) => {
+  ipcMain.handle(IPC_CHANNELS.workItemsList, async (event, query?: WorkItemListQuery | string) => {
     const client = requireClient()
     setStatus({ state: 'syncing', message: 'Синхронизация рабочих элементов…' }, event.sender)
     try {
-      const items = await client.listWorkItems(query)
+      const wiql =
+        typeof query === 'string' && query.trim()
+          ? query
+          : buildWorkItemsWiql(
+              query && typeof query === 'object'
+                ? query
+                : { iterationPath: getSettings().selectedIterationPath },
+            )
+      const items = await client.listWorkItems(wiql)
       setCachedWorkItems(items)
       setStatus({
         state: 'idle',
