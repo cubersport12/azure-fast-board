@@ -76,7 +76,7 @@ export function MattermostBoardPage() {
   const { data: settings } = useSettings()
   const updateSettings = useUpdateSettings()
   const { data: types = [] } = useWorkItemTypes()
-  const { data: workItems = [] } = useWorkItems()
+  const { data: workItems = [] } = useWorkItems({ unfiltered: true })
   const { data: connection } = useConnection()
 
   const [teamId, setTeamId] = useState('')

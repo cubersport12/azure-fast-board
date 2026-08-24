@@ -1,4 +1,4 @@
-import type { AzureClient } from '../azure/client'
+import { defaultWorkItemsWiql, type AzureClient } from '../azure/client'
 import {
   getCachedWorkItems,
   getMattermostCardImport,
@@ -131,7 +131,9 @@ export function listMattermostImports(): MattermostCardImport[] {
 export async function syncMattermostImports(client: AzureClient | null) {
   if (client) {
     try {
-      hydrateFromWorkItems(await client.listWorkItems())
+      hydrateFromWorkItems(
+        await client.listWorkItems(defaultWorkItemsWiql(getSettings().selectedIterationPath)),
+      )
     } catch {
       hydrateFromWorkItems(getCachedWorkItems()?.workItems ?? [])
     }
@@ -149,7 +151,9 @@ export async function importMattermostCards(
   if (!boardId) throw new Error('Выберите доску Mattermost')
   if (!wanted.length) return []
 
-  const items = await client.listWorkItems()
+  const items = await client.listWorkItems(
+    defaultWorkItemsWiql(getSettings().selectedIterationPath),
+  )
   hydrateFromWorkItems(items)
 
   const { cards } = await listMattermostBoardCards(boardId)

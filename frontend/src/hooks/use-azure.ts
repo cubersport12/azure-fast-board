@@ -13,7 +13,9 @@ import type {
   WorkItemTypeInfo,
 } from '../../shared/types'
 import { requireAzureApi } from '@/lib/azure-api'
+import { EMPTY_FILTERS, filtersEqual, normalizeWorkItemFilters } from '@/lib/work-item-filters'
 import { useUiStore } from '@/stores/ui-store'
+import type { WorkItemListQuery } from '../../shared/work-item-wiql'
 
 export const queryKeys = {
   workItems: ['workItems'] as const,
@@ -29,13 +31,33 @@ export const queryKeys = {
   views: ['views'] as const,
 }
 
-export function useWorkItems() {
+export function useWorkItems(options?: { unfiltered?: boolean }) {
   const ready = useUiStore((s) => s.connectionReady)
+  const { data: settings } = useSettings()
+  const uiFilters = useUiStore((s) => s.filters)
+  const storedFilters = normalizeWorkItemFilters(settings?.filters)
+  const filters =
+    settings && filtersEqual(uiFilters, EMPTY_FILTERS) && !filtersEqual(storedFilters, EMPTY_FILTERS)
+      ? storedFilters
+      : uiFilters
+  const iteration = settings?.selectedIterationPath ?? ''
+  const query: WorkItemListQuery = options?.unfiltered
+    ? { iterationPath: iteration }
+    : {
+        iterationPath: iteration,
+        types: filters.types,
+        states: filters.states,
+        assignees: filters.assignees,
+        creators: filters.creators,
+        tags: filters.tags,
+      }
   return useQuery<WorkItem[]>({
-    queryKey: queryKeys.workItems,
-    queryFn: () => requireAzureApi().listWorkItems(),
-    enabled: ready,
+    queryKey: [...queryKeys.workItems, query],
+    queryFn: () => requireAzureApi().listWorkItems(query),
+    enabled: ready && Boolean(settings),
+    staleTime: 25_000,
     refetchInterval: ready ? 30_000 : false,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
   })
 }

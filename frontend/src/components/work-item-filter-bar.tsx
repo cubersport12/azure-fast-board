@@ -4,7 +4,13 @@ import type { StoredFilterPreset, WorkItem } from '../../shared/types'
 import { Button } from '@/components/ui/button'
 import { Dropdown } from '@/components/ui/dropdown'
 import { Dialog, Input, Label } from '@/components/ui/primitives'
-import { useSettings, useUpdateSettings } from '@/hooks/use-azure'
+import {
+  useAssignees,
+  useBoardColumns,
+  useSettings,
+  useUpdateSettings,
+  useWorkItemTypes,
+} from '@/hooks/use-azure'
 import {
   COMPLETED_STATES,
   DEFAULT_FILTERS,
@@ -334,26 +340,44 @@ export function WorkItemFilterBar({
   /** Extra controls in the filter header (e.g. board card views). */
   trailing?: ReactNode
 }) {
+  const { data: typeInfos = [] } = useWorkItemTypes()
+  const { data: teamAssignees = [] } = useAssignees()
+  const { data: columns = [] } = useBoardColumns()
+
   const options = useMemo(() => {
     const base = uniqueOptions(items)
     const merge = (list: string[], extras: string[]) =>
       [...new Set([...extras, ...list])].sort((a, b) => a.localeCompare(b))
 
-    const assignees = [...base.assignees]
-    if (items.some((item) => !item.assignedTo) && !assignees.includes('Unassigned')) {
-      assignees.unshift('Unassigned')
-    }
-    const withoutMe = assignees.filter((entry) => entry !== ME_ASSIGNEE)
-    const creators = base.creators.filter((entry) => entry !== ME_ASSIGNEE)
+    const typeStates = typeInfos.flatMap((type) => type.states.map((state) => state.name))
+    const people = teamAssignees.map((person) => person.displayName).filter(Boolean)
+    const assignees = merge(
+      [...base.assignees, ...people, ...filters.assignees],
+      items.some((item) => !item.assignedTo) ? ['Unassigned'] : [],
+    ).filter((entry) => entry !== ME_ASSIGNEE)
+    const creators = merge(
+      [...base.creators, ...people, ...filters.creators],
+      [],
+    ).filter((entry) => entry !== ME_ASSIGNEE)
 
     return {
-      types: merge(base.types, DEFAULT_FILTERS.types),
-      states: merge(base.states, [...DEFAULT_FILTERS.states, ...COMPLETED_STATES]),
-      assignees: [ME_ASSIGNEE, ...withoutMe],
+      types: merge(base.types, [
+        ...DEFAULT_FILTERS.types,
+        ...typeInfos.map((type) => type.name),
+        ...filters.types,
+      ]),
+      states: merge(base.states, [
+        ...DEFAULT_FILTERS.states,
+        ...COMPLETED_STATES,
+        ...columns.map((column) => column.name),
+        ...typeStates,
+        ...filters.states,
+      ]),
+      assignees: [ME_ASSIGNEE, ...assignees],
       creators: [ME_ASSIGNEE, ...creators],
-      tags: base.tags,
+      tags: merge(base.tags, filters.tags),
     }
-  }, [items])
+  }, [items, typeInfos, teamAssignees, columns, filters])
 
   const normalizedFilters: WorkItemFilters = {
     ...filters,

@@ -14,9 +14,9 @@ import type { WorkItem } from '../../../shared/types'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Badge } from '@/components/ui/primitives'
 import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
-import { useConnection, useCurrentUser, useSettings, useWorkItems } from '@/hooks/use-azure'
+import { useWorkItems } from '@/hooks/use-azure'
 import { usePersistedFilters } from '@/hooks/use-persisted-filters'
-import { applyWorkItemFilters } from '@/lib/work-item-filters'
+import { applyWorkItemFilters, EMPTY_FILTERS } from '@/lib/work-item-filters'
 import { formatRelative, workItemColor, cn } from '@/lib/utils'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -27,22 +27,10 @@ const ROW_GRID =
 
 export function WorkItemsPage() {
   const { data = [], isPending } = useWorkItems()
-  const { data: connection } = useConnection()
-  const { data: currentUser } = useCurrentUser()
-  const { data: settings } = useSettings()
   const search = useUiStore((s) => s.search)
   const { filters, setFilters } = usePersistedFilters()
   const navigate = useNavigate()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'changedDate', desc: true }])
-
-  const me = useMemo(
-    () => ({
-      username: connection?.username,
-      displayName: currentUser?.displayName,
-      uniqueName: currentUser?.uniqueName,
-    }),
-    [connection?.username, currentUser?.displayName, currentUser?.uniqueName],
-  )
 
   const columns = useMemo<ColumnDef<WorkItem>[]>(
     () => [
@@ -109,15 +97,8 @@ export function WorkItemsPage() {
   )
 
   const filtered = useMemo(
-    () =>
-      applyWorkItemFilters(
-        data,
-        search,
-        filters,
-        me,
-        settings?.selectedIterationPath,
-      ),
-    [data, search, filters, me, settings?.selectedIterationPath],
+    () => applyWorkItemFilters(data, search, EMPTY_FILTERS),
+    [data, search],
   )
 
   const table = useReactTable({
