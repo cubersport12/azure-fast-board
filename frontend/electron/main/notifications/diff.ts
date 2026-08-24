@@ -1,4 +1,5 @@
 import type { NotificationEventType, WorkItem } from '../../../shared/types'
+import { anyIdentityMatch, isRelevantToMe } from './identity'
 
 export interface WorkItemChange {
   eventType: NotificationEventType
@@ -12,15 +13,15 @@ function sameIdentity(a?: string, b?: string) {
 }
 
 function matchesCurrentUser(item: WorkItem, uniqueName?: string, displayName?: string) {
-  const candidates = [uniqueName, displayName]
-    .map((value) => value?.trim().toLowerCase())
-    .filter(Boolean) as string[]
-  if (!candidates.length) return true
-  const assigned = [
-    item.assignedToUniqueName?.trim().toLowerCase(),
-    item.assignedTo?.trim().toLowerCase(),
-  ].filter(Boolean) as string[]
-  return assigned.some((value) => candidates.includes(value))
+  return anyIdentityMatch([uniqueName, displayName], [item.assignedToUniqueName, item.assignedTo])
+}
+
+function isMine(
+  item: WorkItem,
+  uniqueName?: string,
+  displayName?: string,
+) {
+  return isRelevantToMe({ uniqueName, displayName }, item) !== false
 }
 
 /** Diff two work-item snapshots into notification events. */
@@ -42,7 +43,12 @@ export function diffWorkItems(
     const before = prevMap.get(item.id)
     if (!before) {
       if (options.enabledEvents['workitem.created'] === false) continue
-      // Creates are board-wide — onlyAssignedToMe does not filter them.
+      if (
+        options.onlyAssignedToMe &&
+        !isMine(item, options.currentUserUniqueName, options.currentUserDisplayName)
+      ) {
+        continue
+      }
       changes.push({
         eventType: 'workitem.created',
         item,
@@ -61,7 +67,10 @@ export function diffWorkItems(
         options.currentUserUniqueName,
         options.currentUserDisplayName,
       )
-      if (!options.onlyAssignedToMe || assignedToMe) {
+      if (
+        !options.onlyAssignedToMe ||
+        isMine(item, options.currentUserUniqueName, options.currentUserDisplayName)
+      ) {
         changes.push({
           eventType: 'workitem.assigned',
           item,
@@ -82,7 +91,7 @@ export function diffWorkItems(
     if (updated && options.enabledEvents['workitem.updated'] !== false) {
       if (
         options.onlyAssignedToMe &&
-        !matchesCurrentUser(item, options.currentUserUniqueName, options.currentUserDisplayName)
+        !isMine(item, options.currentUserUniqueName, options.currentUserDisplayName)
       ) {
         continue
       }

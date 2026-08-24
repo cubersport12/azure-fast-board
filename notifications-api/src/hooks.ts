@@ -54,6 +54,39 @@ function asPositiveInt(value: unknown): number | undefined {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined
 }
 
+function isFieldDelta(value: unknown): value is { oldValue?: unknown; newValue?: unknown } {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      ('newValue' in value || 'oldValue' in value),
+  )
+}
+
+function unwrapField(value: unknown): unknown {
+  return isFieldDelta(value) ? value.newValue : value
+}
+
+function currentFields(payload: AzureHookPayload): Record<string, unknown> {
+  const revision = payload.resource?.revision?.fields
+  if (revision && typeof revision === 'object') return revision
+  const workItem = payload.resource?.workItem?.fields
+  if (workItem && typeof workItem === 'object') return workItem
+  const raw = payload.resource?.fields
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    out[key] = unwrapField(value)
+  }
+  return out
+}
+
+function extractWorkItemTypeFromText(text?: string) {
+  if (!text) return undefined
+  const match = text.match(/\b(Bug|Task|User Story|Feature|PBI|Issue)\b/i)
+  return match?.[1]
+}
+
 function extractWorkItemIdFromText(text?: string) {
   if (!text) return undefined
   const patterns = [
@@ -78,11 +111,7 @@ export function mapServiceHookPayload(raw: unknown): BoardRealtimeEvent | null {
   if (!payload.eventType?.trim()) return null
 
   const isCommented = /^workitem\.commented$/i.test(payload.eventType || '')
-  const fields =
-    payload.resource?.fields ||
-    payload.resource?.revision?.fields ||
-    payload.resource?.workItem?.fields ||
-    {}
+  const fields = currentFields(payload)
 
   const messageText =
     payload.detailedMessage?.markdown ||
@@ -117,10 +146,16 @@ export function mapServiceHookPayload(raw: unknown): BoardRealtimeEvent | null {
     workItemId = resourceId
   }
 
+  const titleRaw = unwrapField(fields['System.Title'])
   const title =
-    fields['System.Title'] != null
-      ? String(fields['System.Title'])
+    titleRaw != null && String(titleRaw) !== '[object Object]'
+      ? String(titleRaw)
       : payload.message?.text?.trim() || undefined
+  const typeRaw = unwrapField(fields['System.WorkItemType'])
+  const workItemType =
+    typeRaw != null && String(typeRaw) !== '[object Object]'
+      ? String(typeRaw)
+      : extractWorkItemTypeFromText(messageText) || extractWorkItemTypeFromText(title)
 
   return {
     id: String(payload.id || randomUUID()),
@@ -135,13 +170,13 @@ export function mapServiceHookPayload(raw: unknown): BoardRealtimeEvent | null {
       payload.resourceContainers?.account?.id,
     workItemId,
     workItemTitle: title,
-    workItemType: fields['System.WorkItemType']
-      ? String(fields['System.WorkItemType'])
-      : undefined,
+    workItemType,
     workItemState: fields['System.State'] ? String(fields['System.State']) : undefined,
     commentId,
     assignedTo: identityName(fields['System.AssignedTo']),
     assignedToUniqueName: identityUnique(fields['System.AssignedTo']),
+    createdBy: identityName(fields['System.CreatedBy']),
+    createdByUniqueName: identityUnique(fields['System.CreatedBy']),
     message: messageText,
     resource: payload.resource,
   }

@@ -1,7 +1,5 @@
 import { MessageSquare } from 'lucide-react'
-import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { getAzureApi } from '@/lib/azure-api'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/hooks/use-azure'
 import { useUiStore } from '@/stores/ui-store'
@@ -17,26 +15,8 @@ export function SendToMattermostButton({
 }) {
   const { data: settings } = useSettings()
   const setShareId = useUiStore((s) => s.setMattermostShareWorkItemId)
-  const [configured, setConfigured] = useState(false)
-
   const mm = settings?.notifications.providers.mattermost
-  const settingsSayConfigured = Boolean(
-    mm?.baseUrl?.trim() && mm?.loginId?.trim() && mm?.passwordConfigured,
-  )
-
-  useEffect(() => {
-    const api = getAzureApi()
-    if (!api?.isMattermostConfigured) {
-      setConfigured(settingsSayConfigured)
-      return
-    }
-    void api
-      .isMattermostConfigured()
-      .then(setConfigured)
-      .catch(() => setConfigured(settingsSayConfigured))
-  }, [settingsSayConfigured, settings?.notifications.providers.mattermost])
-
-  const enabled = configured
+  const enabled = Boolean(mm?.baseUrl?.trim() && mm?.loginId?.trim() && mm?.passwordConfigured)
   const title = enabled
     ? 'Отправить в MM на обсуждение'
     : 'Mattermost не настроен — укажите URL, логин и пароль в Настройках'

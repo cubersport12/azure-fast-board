@@ -24,6 +24,23 @@ function detailWithoutTitle(detail: string, wiTitle: string) {
   return trimmed
 }
 
+function inferWorkItemKind(notification: BoardNotification): string {
+  const raw = notification.workItemType?.trim()
+  const fromText = `${raw || ''} ${notification.workItemTitle || ''} ${notification.body || ''} ${notification.title || ''}`
+  const key = fromText.toLowerCase()
+  if (/\bbug\b|баг/.test(key)) return 'баг'
+  if (/\btask\b|таск/.test(key)) return 'таск'
+  if (key.includes('user story') || /\bstory\b/.test(key)) return 'User Story'
+  if (key.includes('feature')) return 'Feature'
+  if (/\bissue\b/.test(key)) return 'Issue'
+  if (raw) return raw
+  return 'карточка'
+}
+
+function headline(action: string, kind: string, id: string) {
+  return [action, kind, id].filter(Boolean).join(' ')
+}
+
 /** Title/body for Windows toast and in-app notifications list. */
 export function formatWindowsNotification(notification: BoardNotification): {
   title: string
@@ -31,43 +48,44 @@ export function formatWindowsNotification(notification: BoardNotification): {
 } {
   const type = String(notification.eventType).toLowerCase()
   const id = notification.workItemId ? `#${notification.workItemId}` : ''
+  const kind = inferWorkItemKind(notification)
   const wiTitle = notification.workItemTitle?.trim() || ''
   const rawDetail = stripMarkdown(notification.body)
   const detail = detailWithoutTitle(rawDetail, wiTitle)
 
   if (type.includes('commented')) {
     return {
-      title: `Комментарий ${id}`.trim(),
+      title: headline('Комментарий:', kind, id),
       body: [wiTitle, detail].filter(Boolean).join('\n') || 'Новый комментарий',
     }
   }
   if (type.includes('created')) {
     return {
-      title: `Создан элемент ${id}`.trim(),
-      body: wiTitle || detail || 'Новый work item',
+      title: headline('Создан:', kind, id),
+      body: wiTitle || detail || 'Новая карточка',
     }
   }
   if (type.includes('deleted')) {
     return {
-      title: `Удалён элемент ${id}`.trim(),
-      body: wiTitle || detail || 'Work item удалён',
+      title: headline('Удалён:', kind, id),
+      body: wiTitle || detail || 'Карточка удалена',
     }
   }
   if (type.includes('assigned')) {
     return {
-      title: `Назначение ${id}`.trim(),
+      title: headline('Назначен:', kind, id),
       body: wiTitle || detail || 'Изменён исполнитель',
     }
   }
   if (type.includes('updated')) {
     return {
-      title: `Обновление ${id}`.trim(),
-      body: [wiTitle, detail].filter(Boolean).join('\n') || 'Work item обновлён',
+      title: headline('Изменён:', kind, id),
+      body: [wiTitle, detail].filter(Boolean).join('\n') || 'Карточка изменена',
     }
   }
 
   return {
-    title: `Уведомление ${id}`.trim() || 'Azure Fast Board',
+    title: headline('Уведомление:', kind, id) || 'Azure Fast Board',
     body: [wiTitle, detail].filter(Boolean).join('\n') || 'Событие Azure DevOps',
   }
 }

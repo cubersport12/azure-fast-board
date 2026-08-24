@@ -31,12 +31,23 @@ describe('diffWorkItems', () => {
     expect(changes[0].eventType).toBe('workitem.created')
   })
 
-  it('notifies all creates even when onlyAssignedToMe', () => {
+  it('filters creates to assignee or author when onlyAssignedToMe', () => {
     const changes = diffWorkItems(
       [],
       [
-        item({ id: 1, title: 'Mine', assignedToUniqueName: 'me@corp' }),
-        item({ id: 2, title: 'Other', assignedToUniqueName: 'other@corp' }),
+        item({ id: 1, title: 'Assigned to me', assignedToUniqueName: 'me@corp' }),
+        item({
+          id: 2,
+          title: 'I authored',
+          assignedToUniqueName: 'other@corp',
+          createdByUniqueName: 'me@corp',
+        }),
+        item({
+          id: 3,
+          title: 'Colleague',
+          assignedToUniqueName: 'other@corp',
+          createdByUniqueName: 'other@corp',
+        }),
       ],
       {
         onlyAssignedToMe: true,

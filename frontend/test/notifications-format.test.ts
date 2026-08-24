@@ -28,7 +28,8 @@ describe('formatWindowsNotification', () => {
         commentId: 9,
       }),
     )
-    expect(formatted.title).toContain('Комментарий')
+    expect(formatted.title).toContain('Комментарий:')
+    expect(formatted.title).toContain('баг')
     expect(formatted.title).toContain('#25201')
     expect(formatted.body).toContain('Тестовый баг')
     expect(formatted.body).toContain('Hello world')
@@ -76,6 +77,29 @@ describe('formatWindowsNotification', () => {
     expect(healed.workItemId).toBe(25201)
     expect(healed.commentId).toBeUndefined()
     expect(notificationOpenRoute(healed)).toBe('/work-items/25201')
+  })
+
+  it('names create vs update and work item type', () => {
+    expect(
+      formatWindowsNotification(
+        note({
+          eventType: 'workitem.created',
+          workItemId: 10,
+          workItemType: 'Bug',
+          workItemTitle: 'Падает логин',
+        }),
+      ).title,
+    ).toBe('Создан: баг #10')
+    expect(
+      formatWindowsNotification(
+        note({
+          eventType: 'workitem.updated',
+          workItemId: 11,
+          workItemType: 'Task',
+          workItemTitle: 'Починить логин',
+        }),
+      ).title,
+    ).toBe('Изменён: таск #11')
   })
 
   it('strips markdown links from toast body', () => {

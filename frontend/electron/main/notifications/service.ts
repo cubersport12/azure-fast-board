@@ -15,22 +15,9 @@ import {
   healNotificationIds,
   notificationBelongsToWorkItem,
 } from './format'
-import { anyIdentityMatch } from './identity'
+import { isRelevantToMe } from './identity'
 import { deliverToProviders } from './providers'
 import { NotificationsWsClient, type RealtimeBoardEvent } from './ws-client'
-
-/** True when event assignee matches current user. Missing assignee → unknown (null). */
-function isEventAssignedToMe(
-  event: RealtimeBoardEvent,
-  uniqueName?: string,
-  displayName?: string,
-): boolean | null {
-  const mine = [uniqueName, displayName]
-  const theirs = [event.assignedToUniqueName, event.assignedTo]
-  if (!mine.some((value) => value?.trim())) return null
-  if (!theirs.some((value) => value?.trim())) return null
-  return anyIdentityMatch(mine, theirs)
-}
 
 const SELF_ACTION_TTL_MS = 2 * 60_000
 
@@ -342,19 +329,19 @@ export class NotificationService {
       return
     }
 
-    // Creates are board-wide activity: "Создание work item" already gates them.
-    // onlyAssignedToMe still applies to updates / comments / assignments.
-    if (settings.notifications.onlyAssignedToMe && eventTypeRaw !== 'workitem.created') {
-      const mine = isEventAssignedToMe(
+    if (settings.notifications.onlyAssignedToMe) {
+      const mine = isRelevantToMe(
+        {
+          uniqueName: this.currentUserUniqueName,
+          displayName: this.currentUserDisplayName,
+        },
         event,
-        this.currentUserUniqueName,
-        this.currentUserDisplayName,
       )
-      // Comment hooks often omit System.AssignedTo — treat missing assignee as unknown and show.
       if (mine === false) {
         console.log(
-          `[notifications] skip ${eventTypeRaw} #${event.workItemId ?? '-'} — not assigned to me` +
-            ` (event=${event.assignedToUniqueName || event.assignedTo || '∅'}` +
+          `[notifications] skip ${eventTypeRaw} #${event.workItemId ?? '-'} — not assignee or author` +
+            ` (assignee=${event.assignedToUniqueName || event.assignedTo || '∅'}` +
+            ` author=${event.createdByUniqueName || event.createdBy || '∅'}` +
             ` me=${this.currentUserUniqueName || this.currentUserDisplayName || '∅'})`,
         )
         return
@@ -436,6 +423,7 @@ export class NotificationService {
           body: change.item.title || `Work item #${change.item.id}`,
           workItemId: change.item.id,
           workItemTitle: change.item.title,
+          workItemType: change.item.type,
           createdAt: new Date().toISOString(),
           source: 'poll',
           read: selfInitiated,

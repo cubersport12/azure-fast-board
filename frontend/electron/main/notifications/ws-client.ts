@@ -13,6 +13,8 @@ export interface RealtimeBoardEvent {
   commentId?: number
   assignedTo?: string
   assignedToUniqueName?: string
+  createdBy?: string
+  createdByUniqueName?: string
   message?: string
 }
 

@@ -715,24 +715,23 @@ export class AzureClient {
       wiql ||
       `Select [System.Id] From WorkItems Where [System.TeamProject] = @project Order By [System.ChangedDate] Desc`
 
+    // TFS/on-prem WIQL defaults to 200 without $top. 20000 is the Azure ceiling.
     const idsPayload = await this.request<{ workItems: Array<{ id: number }> }>(
-      this.api('/_apis/wit/wiql'),
+      this.api('/_apis/wit/wiql?$top=20000'),
       {
         method: 'POST',
         body: JSON.stringify({ query }),
       },
     )
 
-    const ids = (idsPayload.workItems ?? []).map((item) => item.id).slice(0, 200)
+    const ids = (idsPayload.workItems ?? []).map((item) => item.id)
     if (!ids.length) return []
 
-    const batches: number[][] = []
-    for (let i = 0; i < ids.length; i += 200) batches.push(ids.slice(i, i + 200))
-
     const items: WorkItem[] = []
-    for (const batch of batches) {
+    for (let i = 0; i < ids.length; i += 200) {
+      const batch = ids.slice(i, i + 200)
       const payload = await this.request<{ value: RawWorkItem[] }>(
-        this.api(`/_apis/wit/workitems?ids=${batch.join(',')}&$expand=relations`),
+        this.api(`/_apis/wit/workitems?ids=${batch.join(',')}`),
       )
       items.push(...(payload.value ?? []).map(mapWorkItem))
     }
