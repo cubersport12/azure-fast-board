@@ -132,6 +132,35 @@ export function notificationBelongsToWorkItem(
 }
 
 /**
+ * WS and poll name the same change differently; assigned is a flavor of updated.
+ * One family = one user-visible change per work item.
+ */
+export function notificationEventFamily(eventType: string): string {
+  const type = eventType.toLowerCase()
+  return type === 'workitem.assigned' ? 'workitem.updated' : type
+}
+
+/**
+ * True when history already holds an unread notification for the same item and
+ * change family — a repeated poll/WS hit must not toast it again. Once the user
+ * reads it, genuinely new changes notify as usual.
+ */
+export function hasUnreadNotification(
+  history: BoardNotification[],
+  eventType: string,
+  workItemId?: number | null,
+): boolean {
+  if (!Number.isFinite(workItemId) || !workItemId || workItemId <= 0) return false
+  const family = notificationEventFamily(eventType)
+  return history.some((item) => {
+    if (item.read) return false
+    const healed = healNotificationIds(item)
+    if (healed.workItemId !== workItemId) return false
+    return notificationEventFamily(String(healed.eventType)) === family
+  })
+}
+
+/**
  * Repair incomplete/mis-mapped comment payloads so open-route works.
  * On-prem often sends work item id as commentId and omits workItemId.
  */

@@ -1,6 +1,7 @@
 export {
   extractWorkItemIdFromText,
   formatWindowsNotification,
+  hasUnreadNotification,
   healNotificationIds,
   notificationBelongsToWorkItem,
   notificationOpenRoute,
