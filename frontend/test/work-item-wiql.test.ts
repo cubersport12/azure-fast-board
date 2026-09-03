@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildWorkItemsWiql } from '../shared/work-item-wiql'
+import {
+  buildWorkItemsWiql,
+  isNotificationAllowedType,
+  NOTIFICATION_WORK_ITEM_TYPES,
+} from '../shared/work-item-wiql'
 import { defaultWorkItemsWiql } from '../electron/main/azure/client'
 
 describe('buildWorkItemsWiql', () => {
@@ -30,5 +34,28 @@ describe('buildWorkItemsWiql', () => {
   it('escapes quotes in paths and names', () => {
     expect(buildWorkItemsWiql({ iterationPath: "O'Brien" })).toContain("UNDER 'O''Brien'")
     expect(buildWorkItemsWiql({ assignees: ["O'Brien"] })).toContain("[System.AssignedTo] = 'O''Brien'")
+  })
+})
+
+describe('notification type filter', () => {
+  it('limits notifications to Bug and Task', () => {
+    expect(NOTIFICATION_WORK_ITEM_TYPES).toEqual(['Bug', 'Task'])
+  })
+
+  it('builds poll WIQL restricted to allowed types', () => {
+    const wiql = buildWorkItemsWiql({ types: NOTIFICATION_WORK_ITEM_TYPES })
+    expect(wiql).toContain("[System.WorkItemType] IN ('Bug', 'Task')")
+  })
+
+  it('accepts Bug/Task case-insensitively and rejects other types', () => {
+    expect(isNotificationAllowedType('Bug')).toBe(true)
+    expect(isNotificationAllowedType(' task ')).toBe(true)
+    expect(isNotificationAllowedType('User Story')).toBe(false)
+    expect(isNotificationAllowedType('Feature')).toBe(false)
+  })
+
+  it('keeps events with unknown type (on-prem payloads omit it)', () => {
+    expect(isNotificationAllowedType(undefined)).toBe(true)
+    expect(isNotificationAllowedType('')).toBe(true)
   })
 })

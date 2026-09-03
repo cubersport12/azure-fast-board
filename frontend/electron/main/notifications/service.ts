@@ -13,18 +13,22 @@ import { clearTaskbarAttention } from './attention'
 import { diffWorkItems, dropCreatedBurst, shouldBaselinePoll } from './diff'
 import {
   extractWorkItemIdFromText,
+  hasUnreadNotification,
   healNotificationIds,
   notificationBelongsToWorkItem,
 } from './format'
 import { isRelevantToMe } from './identity'
 import { deliverToProviders } from './providers'
 import { NotificationsWsClient, type RealtimeBoardEvent } from './ws-client'
+import { isNotificationAllowedType, NOTIFICATION_WORK_ITEM_TYPES } from '../../../shared/work-item-wiql'
 
 const SELF_ACTION_TTL_MS = 2 * 60_000
 
 export class NotificationService {
   private timer: NodeJS.Timeout | null = null
   private snapshot: WorkItem[] | null = null
+  /** WIQL of the snapshot — a changed query re-baselines instead of diffing across scopes. */
+  private lastPollWiql: string | null = null
   private currentUserUniqueName?: string
   private currentUserDisplayName?: string
   private currentProjectId?: string
@@ -117,6 +121,7 @@ export class NotificationService {
 
     this.running = true
     this.snapshot = null
+    this.lastPollWiql = null
     void this.bootstrapRealtime(settings.notifications.apiUrl)
 
     const tick = () => {
@@ -330,6 +335,14 @@ export class NotificationService {
       return
     }
 
+    if (!isNotificationAllowedType(event.workItemType)) {
+      console.log(
+        `[notifications] skip ${eventTypeRaw} #${event.workItemId ?? '-'} —` +
+          ` type ${event.workItemType} is not ${NOTIFICATION_WORK_ITEM_TYPES.join('/')}`,
+      )
+      return
+    }
+
     if (settings.notifications.onlyAssignedToMe) {
       const mine = isRelevantToMe(
         {
@@ -351,6 +364,12 @@ export class NotificationService {
 
     const workItemId = event.workItemId || extractWorkItemIdFromText(event.message)
     if (this.alreadyDispatched(eventTypeRaw, workItemId)) return
+    if (hasUnreadNotification(this.history, eventTypeRaw, workItemId)) {
+      console.log(
+        `[notifications] skip ${eventTypeRaw} #${workItemId ?? '-'} — unread duplicate in history`,
+      )
+      return
+    }
     const selfInitiated = this.isRecentSelfAction(workItemId)
     const draft = healNotificationIds({
       id: event.id || randomUUID(),
@@ -394,14 +413,17 @@ export class NotificationService {
       await this.ensureIdentity(client)
       await this.ensureProjectId(client)
 
-      const items = await client.listWorkItems(
-        buildWorkItemsWiql({
-          iterationPath: settings.selectedIterationPath,
-          meOrAuthor: settings.notifications.onlyAssignedToMe,
-        }),
-      )
+      const wiql = buildWorkItemsWiql({
+        iterationPath: settings.selectedIterationPath,
+        types: NOTIFICATION_WORK_ITEM_TYPES,
+        meOrAuthor: settings.notifications.onlyAssignedToMe,
+      })
+      const items = await client.listWorkItems(wiql)
       if (!this.running) return
-      if (shouldBaselinePoll(this.snapshot, items.length)) {
+      // Iteration/filter switch makes the whole new scope look like "created" —
+      // re-baseline instead of re-announcing items notified under the old query.
+      if (this.lastPollWiql !== wiql || shouldBaselinePoll(this.snapshot, items.length)) {
+        this.lastPollWiql = wiql
         this.snapshot = items
         console.log(`[notifications] poll baseline ${items.length} items`)
         return
@@ -421,6 +443,12 @@ export class NotificationService {
       for (const change of changes) {
         if (!this.running) return
         if (this.alreadyDispatched(change.eventType, change.item.id)) continue
+        if (hasUnreadNotification(this.history, change.eventType, change.item.id)) {
+          console.log(
+            `[notifications] skip poll ${change.eventType} #${change.item.id} — unread duplicate in history`,
+          )
+          continue
+        }
         const selfInitiated = this.isRecentSelfAction(change.item.id)
         const notification: BoardNotification = {
           id: randomUUID(),
@@ -451,6 +479,7 @@ export class NotificationService {
   /** Reset baseline after connection changes so we don't flood with "created". */
   resetSnapshot() {
     this.snapshot = null
+    this.lastPollWiql = null
     this.currentUserUniqueName = undefined
     this.currentUserDisplayName = undefined
     this.currentProjectId = undefined

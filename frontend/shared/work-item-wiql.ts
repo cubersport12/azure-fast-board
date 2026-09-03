@@ -2,6 +2,16 @@
 export const WIQL_ME = 'Me'
 export const WIQL_UNASSIGNED = 'Unassigned'
 
+/** Notification engine (poll query + realtime filter) accepts these types only. */
+export const NOTIFICATION_WORK_ITEM_TYPES = ['Bug', 'Task']
+
+/** Unknown/missing type keeps the event — on-prem payloads sometimes omit it. */
+export function isNotificationAllowedType(type?: string | null) {
+  const value = type?.trim().toLowerCase()
+  if (!value) return true
+  return NOTIFICATION_WORK_ITEM_TYPES.some((allowed) => allowed.toLowerCase() === value)
+}
+
 export interface WorkItemListQuery {
   iterationPath?: string
   types?: string[]

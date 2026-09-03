@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatWindowsNotification,
+  hasUnreadNotification,
   healNotificationIds,
   notificationOpenRoute,
 } from '../shared/notifications-format'
@@ -113,5 +114,30 @@ describe('formatWindowsNotification', () => {
     )
     expect(formatted.body).not.toMatch(/https?:\/\//)
     expect(formatted.body).toContain('Тестовый баг')
+  })
+})
+
+describe('hasUnreadNotification', () => {
+  it('matches unread duplicates across WS and poll naming', () => {
+    const history = [
+      note({ id: 'a', eventType: 'workitem.updated', workItemId: 10, read: false }),
+    ]
+    expect(hasUnreadNotification(history, 'workitem.assigned', 10)).toBe(true)
+    expect(hasUnreadNotification(history, 'workitem.updated', 10)).toBe(true)
+  })
+
+  it('ignores read history and other items or event families', () => {
+    const history = [
+      note({ id: 'a', eventType: 'workitem.updated', workItemId: 10, read: true }),
+      note({ id: 'b', eventType: 'workitem.commented', workItemId: 10, read: false }),
+      note({ id: 'c', eventType: 'workitem.updated', workItemId: 11, read: false }),
+    ]
+    expect(hasUnreadNotification(history, 'workitem.updated', 10)).toBe(false)
+    expect(hasUnreadNotification(history, 'workitem.commented', 10)).toBe(true)
+    expect(hasUnreadNotification(history, 'workitem.updated', 11)).toBe(true)
+  })
+
+  it('requires a work item id', () => {
+    expect(hasUnreadNotification([note({ id: 'a' })], 'workitem.updated', undefined)).toBe(false)
   })
 })
