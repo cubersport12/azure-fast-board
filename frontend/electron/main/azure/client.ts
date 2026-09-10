@@ -9,6 +9,7 @@ import {
   type PatchWorkItemInput,
   type ServiceHookCreateInput,
   type ServiceHookSubscription,
+  type UploadedAttachment,
   type WorkItem,
   type WorkItemComment,
   type WorkItemDetail,
@@ -481,7 +482,6 @@ export class AzureClient {
       this.connection.apiVersion = apiVersion
 
       let projects: Array<{ id: string; name: string }> = []
-      let teams: Array<{ id: string; name: string }> = []
 
       if (this.connection.collection) {
         projects = await this.listProjects()
@@ -490,16 +490,11 @@ export class AzureClient {
         projects = await this.listProjects()
       }
 
-      if (this.connection.project) {
-        teams = await this.listTeams()
-      }
-
       return {
         ok: true,
         message: `Connected (API ${apiVersion})`,
         collections,
         projects,
-        teams,
         apiVersion,
       }
     } catch (error) {
@@ -1014,7 +1009,7 @@ export class AzureClient {
     }
   }
 
-  async uploadAttachment(id: number, file: AttachmentUpload): Promise<WorkItemDetail> {
+  async uploadAttachment(id: number, file: AttachmentUpload): Promise<UploadedAttachment> {
     const binary = Buffer.from(file.dataBase64, 'base64')
     const uploadUrl = this.api(
       `/_apis/wit/attachments?fileName=${encodeURIComponent(file.fileName)}&uploadType=Simple`,
@@ -1033,7 +1028,7 @@ export class AzureClient {
       this.api(`/_apis/wit/workitems/${id}?$expand=relations`),
     )
 
-    await this.request<RawWorkItem>(this.api(`/_apis/wit/workitems/${id}`), {
+    const patched = await this.request<RawWorkItem>(this.api(`/_apis/wit/workitems/${id}`), {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json-patch+json',
@@ -1052,7 +1047,9 @@ export class AzureClient {
       ]),
     })
 
-    return this.getWorkItem(id)
+    // Relations order is not guaranteed on-prem — the upload response url is the
+    // only reliable handle for the file we just linked.
+    return { url: uploaded.url, name: file.fileName, rev: patched.rev ?? current.rev }
   }
 
   async removeAttachment(id: number, attachmentUrl: string): Promise<WorkItemDetail> {
@@ -1146,21 +1143,27 @@ export class AzureClient {
     const people: AssigneeIdentity[] = []
 
     try {
-      const team = this.connection.team || this.connection.project
+      // All users of the project: union of members across every team.
       const project = this.connection.project
-      if (project && team) {
-        const payload = await this.request<{
-          value: Array<{
-            identity?: {
-              id?: string
-              displayName?: string
-              uniqueName?: string
-            }
-          }>
-        }>(
-          `${this.baseUrl}/_apis/projects/${encodeURIComponent(project)}/teams/${encodeURIComponent(team)}/members?api-version=${this.connection.apiVersion}&$top=500`,
-        )
-        for (const row of payload.value ?? []) {
+      const teams = await this.listTeams()
+      const members = await Promise.allSettled(
+        teams.map((team) =>
+          this.request<{
+            value: Array<{
+              identity?: {
+                id?: string
+                displayName?: string
+                uniqueName?: string
+              }
+            }>
+          }>(
+            `${this.baseUrl}/_apis/projects/${encodeURIComponent(project)}/teams/${encodeURIComponent(team.id || team.name)}/members?api-version=${this.connection.apiVersion}&$top=500`,
+          ),
+        ),
+      )
+      for (const settled of members) {
+        if (settled.status !== 'fulfilled') continue
+        for (const row of settled.value.value ?? []) {
           const identity = row.identity
           if (!identity?.displayName) continue
           people.push({

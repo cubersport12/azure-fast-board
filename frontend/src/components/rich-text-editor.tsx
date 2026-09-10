@@ -105,6 +105,8 @@ export interface RichTextEditorProps {
   /** Caps editor body height; content scrolls inside. */
   maxHeight?: number
   className?: string
+  /** Double click on an inline image (viewer open) — src is the rendered blob:/data: url. */
+  onImageDoubleClick?: (src: string) => void
   'data-composer'?: string
 }
 
@@ -117,6 +119,7 @@ export function RichTextEditor({
   minHeight = 120,
   maxHeight,
   className,
+  onImageDoubleClick,
   'data-composer': dataComposer = 'editor',
 }: RichTextEditorProps) {
   const [uploading, setUploading] = useState(false)
@@ -430,6 +433,17 @@ export function RichTextEditor({
         className,
       )}
       data-composer={dataComposer}
+      onDoubleClick={
+        onImageDoubleClick
+          ? (event) => {
+              const target = event.target as HTMLElement
+              if (target.tagName !== 'IMG') return
+              const img = target as HTMLImageElement
+              const src = img.currentSrc || img.getAttribute('src') || ''
+              if (src) onImageDoubleClick(src)
+            }
+          : undefined
+      }
     >
       {loading && (
         <div className="border-b border-slate-100 px-3 py-1 text-[11px] text-slate-400 dark:border-slate-800">

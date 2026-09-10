@@ -29,7 +29,6 @@ const api: AzureFastBoardApi = {
   verifyConnection: () => ipcRenderer.invoke(IPC_CHANNELS.connectionVerify),
   listCollections: (creds) => ipcRenderer.invoke(IPC_CHANNELS.connectionListCollections, creds),
   listProjects: (creds) => ipcRenderer.invoke(IPC_CHANNELS.connectionListProjects, creds),
-  listTeams: (creds) => ipcRenderer.invoke(IPC_CHANNELS.connectionListTeams, creds),
   listWorkItems: (query) => ipcRenderer.invoke(IPC_CHANNELS.workItemsList, query),
   getWorkItem: (id: number) => ipcRenderer.invoke(IPC_CHANNELS.workItemsGet, id),
   createWorkItem: (input: CreateWorkItemInput) => ipcRenderer.invoke(IPC_CHANNELS.workItemsCreate, input),

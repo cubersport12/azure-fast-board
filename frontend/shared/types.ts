@@ -4,7 +4,8 @@ export interface ConnectionConfig {
   serverUrl: string
   collection: string
   project: string
-  team: string
+  /** Legacy: TFS team selected in the old connection dialog. Unused — project default team applies. */
+  team?: string
   apiVersion: string
   /** Windows/domain username (DOMAIN\\user or email) */
   username?: string
@@ -38,7 +39,6 @@ export interface ConnectionTestResult {
   message: string
   collections?: NamedEntity[]
   projects?: NamedEntity[]
-  teams?: NamedEntity[]
   apiVersion?: string
 }
 
@@ -146,6 +146,8 @@ export interface AppSettings {
   selectedIterationPath: string
   /** Last assignee used in quick create (empty = Unassigned). */
   lastAssignee: string
+  /** Last area path used in quick create (empty = not chosen yet). */
+  lastAreaPath: string
   lastMattermostTeamId: string
   lastMattermostChannelId: string
   lastMattermostBoardId: string
@@ -278,6 +280,13 @@ export interface WorkItemAttachment {
   id: string
   name: string
   url: string
+}
+
+/** Result of an attachment upload — url is authoritative for the freshly uploaded file. */
+export interface UploadedAttachment {
+  url: string
+  name: string
+  rev: number
 }
 
 export interface WorkItemDetail extends WorkItem {
@@ -495,6 +504,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subscribedIterations: [],
   selectedIterationPath: '',
   lastAssignee: '',
+  lastAreaPath: '',
   lastMattermostTeamId: '',
   lastMattermostChannelId: '',
   lastMattermostBoardId: '',
@@ -517,6 +527,5 @@ export const DEFAULT_CONNECTION: ConnectionConfig = {
   serverUrl: 'https://devops.company.local',
   collection: 'DefaultCollection',
   project: '',
-  team: '',
   apiVersion: '7.0',
 }

@@ -135,7 +135,9 @@ const Column = memo(function Column({
 })
 
 export function BoardPage() {
-  const { data: items = [], isPending } = useWorkItems()
+  // States filter is intentionally ignored on the kanban — a moved card must
+  // stay visible in its new column (all states are always shown here).
+  const { data: items = [], isPending } = useWorkItems({ ignoreStates: true })
   const { data: types = [] } = useWorkItemTypes()
   const { data: settings } = useSettings()
   const move = useMoveWorkItem()
@@ -265,6 +267,7 @@ export function BoardPage() {
         items={items}
         filters={filters}
         onChange={setFilters}
+        hideStates
         trailing={<BoardCardPresetBar />}
       />
       <div className="shrink-0 text-sm text-muted-foreground">{filtered.length} карточек</div>

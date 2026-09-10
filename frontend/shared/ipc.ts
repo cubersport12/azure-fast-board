@@ -22,6 +22,7 @@ import type {
   WorkItemComment,
   WorkItemDetail,
   WorkItemTypeInfo,
+  UploadedAttachment,
   MattermostBoardInfo,
   MattermostBoardCardsResult,
   MattermostCardImport,
@@ -40,7 +41,6 @@ export const IPC_CHANNELS = {
   connectionVerify: 'connection:verify',
   connectionListCollections: 'connection:listCollections',
   connectionListProjects: 'connection:listProjects',
-  connectionListTeams: 'connection:listTeams',
   workItemsList: 'workItems:list',
   workItemsGet: 'workItems:get',
   workItemsCreate: 'workItems:create',
@@ -121,9 +121,6 @@ export interface AzureFastBoardApi {
     creds: ConnectionCredentials,
   ) => Promise<{ collections: NamedEntity[]; apiVersion: string; serverUrl: string }>
   listProjects: (creds: ConnectionCredentials & { collection: string }) => Promise<NamedEntity[]>
-  listTeams: (
-    creds: ConnectionCredentials & { collection: string; project: string },
-  ) => Promise<NamedEntity[]>
   listWorkItems: (query?: WorkItemListQuery | string) => Promise<WorkItem[]>
   getWorkItem: (id: number) => Promise<WorkItemDetail>
   createWorkItem: (input: CreateWorkItemInput) => Promise<WorkItem>
@@ -131,7 +128,7 @@ export interface AzureFastBoardApi {
   moveWorkItem: (id: number, column: string, rev: number, state?: string) => Promise<WorkItem>
   getComments: (id: number) => Promise<WorkItemComment[]>
   addComment: (input: AddCommentInput) => Promise<WorkItemComment>
-  uploadAttachment: (id: number, file: AttachmentUpload) => Promise<WorkItemDetail>
+  uploadAttachment: (id: number, file: AttachmentUpload) => Promise<UploadedAttachment>
   removeAttachment: (id: number, attachmentUrl: string) => Promise<WorkItemDetail>
   fetchMedia: (url: string) => Promise<MediaPayload>
   getBoardColumns: () => Promise<BoardColumn[]>

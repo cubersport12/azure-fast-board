@@ -81,9 +81,12 @@ export function AuthenticatedImage({
 export function AuthenticatedHtml({
   html,
   className,
+  onImageClick,
 }: {
   html: string
   className?: string
+  /** Click on an <img> inside the rendered html — original ADO url when known. */
+  onImageClick?: (src: string) => void
 }) {
   // Never paint remote ADO img src in the renderer (no NTLM → 401).
   const [resolved, setResolved] = useState(() =>
@@ -102,5 +105,22 @@ export function AuthenticatedHtml({
     }
   }, [html])
 
-  return <div className={className} dangerouslySetInnerHTML={{ __html: resolved }} />
+  return (
+    <div
+      className={cn(className, onImageClick && '[&_img]:cursor-zoom-in')}
+      dangerouslySetInnerHTML={{ __html: resolved }}
+      onClick={
+        onImageClick
+          ? (event) => {
+              const target = event.target as HTMLElement
+              if (target.tagName !== 'IMG') return
+              const img = target as HTMLImageElement
+              // data-ado-src keeps the original url; data:/blob: replacements render directly.
+              const src = img.dataset.adoSrc || img.currentSrc || img.getAttribute('src') || ''
+              if (src) onImageClick(src)
+            }
+          : undefined
+      }
+    />
+  )
 }

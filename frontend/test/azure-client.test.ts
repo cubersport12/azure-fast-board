@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AzureClient,
   azureBasicAuthHeader,
   createDemoWorkItems,
   defaultWorkItemsWiql,
@@ -116,5 +117,39 @@ describe('mapWorkItem', () => {
 describe('createDemoWorkItems', () => {
   it('returns seed cards for offline mode', () => {
     expect(createDemoWorkItems().length).toBeGreaterThan(0)
+  })
+})
+
+describe('uploadAttachment', () => {
+  it('returns the authoritative uploaded url, not the last relation', async () => {
+    const client = new AzureClient({
+      connection: {
+        serverUrl: 'https://tfs.local',
+        collection: 'Col',
+        project: 'Proj',
+        team: '',
+        apiVersion: '5.0',
+      },
+      password: 'secret',
+      username: 'DOMAIN\\user',
+    })
+
+    const uploadUrl = 'https://tfs.local/Col/_apis/wit/attachments/11111111-1111-1111-1111-111111111111?fileName=second.png'
+    const responses: unknown[] = [
+      { url: uploadUrl }, // POST upload
+      { id: 7, rev: 12, relations: [] }, // GET current (If-Match)
+      { id: 7, rev: 13, relations: [] }, // PATCH link
+    ]
+    ;(client as unknown as { request: (url: string, init?: RequestInit) => Promise<unknown> })
+      .request = async () => responses.shift()
+
+    const uploaded = await client.uploadAttachment(7, {
+      fileName: 'second.png',
+      mimeType: 'image/png',
+      dataBase64: Buffer.from('second-image').toString('base64'),
+    })
+
+    expect(uploaded).toEqual({ url: uploadUrl, name: 'second.png', rev: 13 })
+    expect(responses).toHaveLength(0)
   })
 })
