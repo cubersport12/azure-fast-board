@@ -80,7 +80,7 @@ function StepIndicator({ step }: { step: WizardStep }) {
             : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
         )}
       >
-        2. Проект и команда
+        2. Проект
       </span>
     </div>
   )
@@ -99,7 +99,6 @@ export function ConnectionDialog() {
   const [serverUrl, setServerUrl] = useState(DEFAULT_CONNECTION.serverUrl)
   const [collection, setCollection] = useState('')
   const [project, setProject] = useState('')
-  const [team, setTeam] = useState('')
   // PAT UI is commented out; password/NTLM is the only method.
   const [authMethod] = useState<AuthMethod>('password')
   // const [pat, setPat] = useState('')
@@ -110,9 +109,8 @@ export function ConnectionDialog() {
   const [message, setMessage] = useState<string | null>(null)
   const [collections, setCollections] = useState<NamedEntity[]>([])
   const [projects, setProjects] = useState<NamedEntity[]>([])
-  const [teams, setTeams] = useState<NamedEntity[]>([])
   const [busy, setBusy] = useState(false)
-  const [loadingStep, setLoadingStep] = useState<'idle' | 'collections' | 'projects' | 'teams'>('idle')
+  const [loadingStep, setLoadingStep] = useState<'idle' | 'collections' | 'projects'>('idle')
   const [sessionAuthed, setSessionAuthed] = useState(false)
 
   useEffect(() => {
@@ -121,7 +119,6 @@ export function ConnectionDialog() {
       setServerUrl(data.serverUrl)
       setCollection(data.collection)
       setProject(data.project)
-      setTeam(data.team)
       setApiVersion(data.apiVersion)
       setUsername(data.username || '')
       // setAuthMethod(data.authMethod || 'password')
@@ -141,7 +138,6 @@ export function ConnectionDialog() {
       setPassword('')
       setCollections([])
       setProjects([])
-      setTeams([])
     }
   }, [open, ready])
 
@@ -185,23 +181,7 @@ export function ConnectionDialog() {
             ''
           setProject(nextProject)
           if (nextProject) {
-            const teamList = await requireAzureApi().listTeams({
-              serverUrl: result.serverUrl.trim(),
-              collection: preferred,
-              project: nextProject,
-              apiVersion: result.apiVersion,
-              insecureTls: settings?.insecureTls,
-              username: data.username,
-              authMethod: data.authMethod || 'password',
-            })
-            if (cancelled) return
-            setTeams(teamList)
-            setTeam(
-              teamList.find((entry) => entry.name === data.team)?.name ||
-                teamList[0]?.name ||
-                '',
-            )
-            setMessage(`Готово · ${teamList.length} команд`)
+            setMessage(`Готово · ${projectList.length} проектов`)
           }
         }
       } catch (error) {
@@ -216,7 +196,7 @@ export function ConnectionDialog() {
     return () => {
       cancelled = true
     }
-  }, [open, ready, data?.serverUrl, data?.collection, data?.project, data?.team, data?.apiVersion, data?.username, data?.authMethod, settings?.insecureTls])
+  }, [open, ready, data?.serverUrl, data?.collection, data?.project, data?.apiVersion, data?.username, data?.authMethod, settings?.insecureTls])
 
   const persistTls = async (enabled: boolean) => {
     setInsecureTls(enabled)
@@ -249,7 +229,6 @@ export function ConnectionDialog() {
     setLoadingStep('collections')
     setMessage(null)
     setProjects([])
-    setTeams([])
     try {
       if (insecureTls) await persistTls(true)
       const result = await requireAzureApi().listCollections(credsBase())
@@ -293,7 +272,6 @@ export function ConnectionDialog() {
     if (!nextCollection || !canLoadLists) return
     setBusy(true)
     setLoadingStep('projects')
-    setTeams([])
     try {
       const list = await requireAzureApi().listProjects({
         ...credsBase(),
@@ -305,41 +283,8 @@ export function ConnectionDialog() {
       const preferred = list.find((entry) => entry.name === project)?.name || list[0]?.name || ''
       setProject(preferred)
       setMessage(`Загружено ${list.length} проектов`)
-      if (preferred) {
-        await loadTeams(nextServerUrl, nextCollection, preferred, nextApiVersion)
-      }
     } catch (error) {
       setProjects([])
-      setMessage(cleanInvokeError(error))
-    } finally {
-      setBusy(false)
-      setLoadingStep('idle')
-    }
-  }
-
-  const loadTeams = async (
-    nextServerUrl = serverUrl,
-    nextCollection = collection,
-    nextProject = project,
-    nextApiVersion = apiVersion,
-  ) => {
-    if (!nextCollection || !nextProject || !canLoadLists) return
-    setBusy(true)
-    setLoadingStep('teams')
-    try {
-      const list = await requireAzureApi().listTeams({
-        ...credsBase(),
-        serverUrl: nextServerUrl.trim(),
-        collection: nextCollection,
-        project: nextProject,
-        apiVersion: nextApiVersion,
-      })
-      setTeams(list)
-      const preferred = list.find((entry) => entry.name === team)?.name || list[0]?.name || ''
-      setTeam(preferred)
-      setMessage(`Готово · ${list.length} команд`)
-    } catch (error) {
-      setTeams([])
       setMessage(cleanInvokeError(error))
     } finally {
       setBusy(false)
@@ -365,7 +310,6 @@ export function ConnectionDialog() {
         serverUrl: serverUrl.trim(),
         collection,
         project,
-        team,
         apiVersion,
         username: username.trim() || undefined,
         authMethod,
@@ -403,10 +347,8 @@ export function ConnectionDialog() {
       setPassword('')
       setCollections([])
       setProjects([])
-      setTeams([])
       setCollection('')
       setProject('')
-      setTeam('')
       setMessage(null)
       setStep(1)
     } finally {
@@ -440,10 +382,8 @@ export function ConnectionDialog() {
                 setServerUrl(e.target.value)
                 setCollections([])
                 setProjects([])
-                setTeams([])
                 setCollection('')
                 setProject('')
-                setTeam('')
                 setSessionAuthed(false)
               }}
               placeholder="https://devops.company.local/tfs"
@@ -549,9 +489,7 @@ export function ConnectionDialog() {
             onChange={(value) => {
               setCollection(value)
               setProject('')
-              setTeam('')
               setProjects([])
-              setTeams([])
               if (value) void loadProjects(serverUrl, value, apiVersion)
             }}
           />
@@ -568,22 +506,7 @@ export function ConnectionDialog() {
             options={projects}
             placeholder={collection ? 'Выберите проект' : 'Сначала выберите коллекцию'}
             disabled={busy || !collection}
-            onChange={(value) => {
-              setProject(value)
-              setTeam('')
-              setTeams([])
-              if (value) void loadTeams(serverUrl, collection, value, apiVersion)
-            }}
-          />
-
-          <SelectField
-            id="conn-team"
-            label="Команда"
-            value={team}
-            options={teams}
-            placeholder={project ? 'Выберите команду' : 'Сначала выберите проект'}
-            disabled={busy || !project}
-            onChange={setTeam}
+            onChange={setProject}
           />
 
           <label className="flex items-center gap-2 text-sm md:col-span-2">

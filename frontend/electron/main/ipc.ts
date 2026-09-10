@@ -255,7 +255,6 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
             serverUrl: normalizeServerUrl(creds.serverUrl),
             collection: '',
             project: '',
-            team: '',
             apiVersion: creds.apiVersion || '7.0',
             username: creds.username?.trim() || undefined,
             authMethod,
@@ -298,7 +297,6 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
             serverUrl: normalizeServerUrl(creds.serverUrl),
             collection: creds.collection,
             project: '',
-            team: '',
             apiVersion: creds.apiVersion || '7.0',
             username: creds.username?.trim() || undefined,
             authMethod,
@@ -309,50 +307,6 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
           insecureTls,
         })
         return await client.listProjects()
-      } catch (error) {
-        throw toIpcError(error)
-      }
-    },
-  )
-
-  ipcMain.handle(
-    IPC_CHANNELS.connectionListTeams,
-    async (
-      _e,
-      creds: {
-        serverUrl: string
-        pat?: string
-        password?: string
-        collection: string
-        project: string
-        apiVersion?: string
-        insecureTls?: boolean
-        username?: string
-        authMethod?: 'pat' | 'password'
-      },
-    ) => {
-      try {
-        const insecureTls = Boolean(creds.insecureTls ?? withTls())
-        if (insecureTls) applyInsecureTls(true)
-        const authMethod = creds.authMethod || (creds.password ? 'password' : getConnection()?.authMethod) || 'password'
-        const password = creds.password || loadPassword() || undefined
-        const pat = creds.pat || loadPat() || undefined
-        const client = new AzureClient({
-          connection: {
-            serverUrl: normalizeServerUrl(creds.serverUrl),
-            collection: creds.collection,
-            project: creds.project,
-            team: '',
-            apiVersion: creds.apiVersion || '7.0',
-            username: creds.username?.trim() || undefined,
-            authMethod,
-          },
-          pat,
-          password,
-          username: creds.username,
-          insecureTls,
-        })
-        return await client.listTeams()
       } catch (error) {
         throw toIpcError(error)
       }

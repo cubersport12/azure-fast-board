@@ -190,6 +190,7 @@ export function getSettings() {
     subscribedIterations,
     selectedIterationPath: normalizeIterationFieldPath(settings.selectedIterationPath),
     lastAssignee: settings.lastAssignee ?? '',
+    lastAreaPath: settings.lastAreaPath ?? '',
     lastMattermostTeamId: settings.lastMattermostTeamId ?? '',
     lastMattermostChannelId: settings.lastMattermostChannelId ?? '',
     lastMattermostBoardId: settings.lastMattermostBoardId ?? '',

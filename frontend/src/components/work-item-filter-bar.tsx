@@ -333,12 +333,15 @@ export function WorkItemFilterBar({
   filters,
   onChange,
   trailing,
+  hideStates = false,
 }: {
   items: WorkItem[]
   filters: WorkItemFilters
   onChange: (next: WorkItemFilters) => void
   /** Extra controls in the filter header (e.g. board card views). */
   trailing?: ReactNode
+  /** Kanban ignores the shared states filter — hide the facet there. */
+  hideStates?: boolean
 }) {
   const { data: typeInfos = [] } = useWorkItemTypes()
   const { data: teamAssignees = [] } = useAssignees()
@@ -407,7 +410,7 @@ export function WorkItemFilterBar({
           )}
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className={cn('grid gap-3 sm:grid-cols-2', hideStates ? 'xl:grid-cols-4' : 'xl:grid-cols-5')}>
         <Dropdown
           multiple
           label="Тип"
@@ -419,17 +422,19 @@ export function WorkItemFilterBar({
           emptyLabel="Все"
           searchPlaceholder="Поиск типа…"
         />
-        <Dropdown
-          multiple
-          label="Состояние"
-          favoritesKey="filter-states"
-          options={toOptions(options.states)}
-          value={normalizedFilters.states}
-          onChange={(states) => onChange({ ...normalizedFilters, states })}
-          placeholder="Все"
-          emptyLabel="Все"
-          searchPlaceholder="Поиск состояния…"
-        />
+        {!hideStates && (
+          <Dropdown
+            multiple
+            label="Состояние"
+            favoritesKey="filter-states"
+            options={toOptions(options.states)}
+            value={normalizedFilters.states}
+            onChange={(states) => onChange({ ...normalizedFilters, states })}
+            placeholder="Все"
+            emptyLabel="Все"
+            searchPlaceholder="Поиск состояния…"
+          />
+        )}
         <Dropdown
           multiple
           label="Исполнитель"

@@ -31,7 +31,7 @@ export const queryKeys = {
   views: ['views'] as const,
 }
 
-export function useWorkItems(options?: { unfiltered?: boolean }) {
+export function useWorkItems(options?: { unfiltered?: boolean; ignoreStates?: boolean }) {
   const ready = useUiStore((s) => s.connectionReady)
   const { data: settings } = useSettings()
   const uiFilters = useUiStore((s) => s.filters)
@@ -46,7 +46,8 @@ export function useWorkItems(options?: { unfiltered?: boolean }) {
     : {
         iterationPath: iteration,
         types: filters.types,
-        states: filters.states,
+        // Kanban shows every state regardless of the shared states filter.
+        states: options?.ignoreStates ? [] : filters.states,
         assignees: filters.assignees,
         creators: filters.creators,
         tags: filters.tags,

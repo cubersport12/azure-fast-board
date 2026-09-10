@@ -11,6 +11,7 @@ import {
   Folder,
   Layers,
   MessageSquare,
+  Paperclip,
   RefreshCw,
   RotateCcw,
   Save,
@@ -20,7 +21,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AuthenticatedHtml } from '@/components/authenticated-media'
+import { AuthenticatedHtml, AuthenticatedImage } from '@/components/authenticated-media'
+import { ImageViewerDialog } from '@/components/image-viewer-dialog'
 import { RichTextEditor, htmlContentEqual, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Button } from '@/components/ui/button'
 import { Badge, Card, Input, Label } from '@/components/ui/primitives'
@@ -76,6 +78,12 @@ function getInitials(name?: string) {
   return name.slice(0, 2).toUpperCase()
 }
 
+const IMAGE_ATTACHMENT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i
+
+function isImageAttachment(name?: string) {
+  return IMAGE_ATTACHMENT_RE.test(name || '')
+}
+
 export function WorkItemDetailPage() {
   const { id = '' } = useParams()
   const workItemId = Number(id)
@@ -114,6 +122,7 @@ export function WorkItemDetailPage() {
   const [savingBody, setSavingBody] = useState(false)
   const [activeHighlightCommentId, setActiveHighlightCommentId] = useState<number | null>(null)
   const [copiedId, setCopiedId] = useState(false)
+  const [viewerImage, setViewerImage] = useState<{ src: string; alt: string } | null>(null)
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
   const areas = areaPaths?.areas ?? []
@@ -369,10 +378,9 @@ export function WorkItemDetailPage() {
   })
 
   const uploadInlineImage = useCallback(async (file: AttachmentUpload) => {
-    const detail = await requireAzureApi().uploadAttachment(workItemId, file)
-    const latest = detail.attachments[detail.attachments.length - 1]
-    if (!latest?.url) throw new Error('Не удалось получить URL изображения')
-    return latest.url
+    const uploaded = await requireAzureApi().uploadAttachment(workItemId, file)
+    if (!uploaded.url) throw new Error('Не удалось получить URL изображения')
+    return uploaded.url
   }, [workItemId])
 
   const onBodyUpload = useCallback(
@@ -743,6 +751,9 @@ export function WorkItemDetailPage() {
                   setDirty(true)
                 }}
                 onUploadImage={onBodyUpload}
+                onImageDoubleClick={(src) =>
+                  setViewerImage({ src, alt: 'Изображение из описания' })
+                }
                 placeholder={
                   isReproBody
                     ? 'Опишите шаги для воспроизведения бага… Ctrl+V для вставки скриншота'
@@ -761,6 +772,53 @@ export function WorkItemDetailPage() {
                 </div>
               )} */}
             </Card>
+
+            {/* Attachments Card */}
+            {data.attachments.length > 0 && (
+              <Card className="p-5 shadow-xs border-border bg-card space-y-4">
+                <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="h-4 w-4 text-primary" />
+                    <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                      Вложения
+                    </h2>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">
+                    Клик по картинке — просмотр с зумом
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {data.attachments.map((attachment) =>
+                    isImageAttachment(attachment.name) ? (
+                      <button
+                        key={attachment.id}
+                        type="button"
+                        title={`Открыть ${attachment.name}`}
+                        onClick={() =>
+                          setViewerImage({ src: attachment.url, alt: attachment.name })
+                        }
+                        className="group overflow-hidden rounded-lg border border-border bg-muted/30 transition hover:border-primary/60 hover:shadow-sm"
+                      >
+                        <AuthenticatedImage
+                          src={attachment.url}
+                          alt={attachment.name}
+                          className="h-24 w-36 object-cover transition group-hover:scale-105"
+                        />
+                      </button>
+                    ) : (
+                      <span
+                        key={attachment.id}
+                        title={attachment.name}
+                        className="inline-flex max-w-56 items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80"
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                        <span className="truncate">{attachment.name}</span>
+                      </span>
+                    ),
+                  )}
+                </div>
+              </Card>
+            )}
 
             {/* Discussion / Comments Card */}
             <Card id="wi-discussion" className="p-5 shadow-xs border-border bg-card space-y-5">
@@ -809,6 +867,12 @@ export function WorkItemDetailPage() {
                     <AuthenticatedHtml
                       className="max-w-none text-xs text-foreground/90 leading-relaxed [&_img]:mt-2 [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:border [&_img]:border-border [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
                       html={renderCommentHtml(entry.text)}
+                      onImageClick={(src) =>
+                        setViewerImage({
+                          src,
+                          alt: entry.createdBy ? `Изображение · ${entry.createdBy}` : 'Изображение',
+                        })
+                      }
                     />
                   </div>
                 ))}
@@ -1009,6 +1073,12 @@ export function WorkItemDetailPage() {
           </div>
         </div>
       </div>
+
+      <ImageViewerDialog
+        src={viewerImage?.src ?? null}
+        alt={viewerImage?.alt || 'Изображение'}
+        onClose={() => setViewerImage(null)}
+      />
     </div>
   )
 }

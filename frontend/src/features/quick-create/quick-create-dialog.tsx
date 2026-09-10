@@ -18,6 +18,7 @@ import {
   useWorkItemTypes,
 } from '@/hooks/use-azure'
 import { requireAzureApi } from '@/lib/azure-api'
+import { debugLog } from '@/lib/debug-log'
 import { uniqueOptions } from '@/lib/work-item-filters'
 import { cn, cardIdFromMmTag, workItemColor } from '@/lib/utils'
 import {
@@ -118,6 +119,19 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
 
   const defaultAssignee = useMemo(() => settings?.lastAssignee ?? '', [settings?.lastAssignee])
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
+  /** Last chosen area (kept only while it still exists in the project's area list). */
+  const rememberedAreaPath = useMemo(() => {
+    const last = settings?.lastAreaPath?.trim() || ''
+    if (!last) return ''
+    return areas.some((area) => area.path.toLowerCase() === last.toLowerCase()) ? last : ''
+  }, [settings?.lastAreaPath, areas])
+  /** First non-root area — root is the dropdown's «Не указано». */
+  const firstAreaPath = useMemo(
+    () =>
+      areas.find((area) => !rootPath || area.path.toLowerCase() !== rootPath.toLowerCase())?.path ||
+      '',
+    [areas, rootPath],
+  )
 
   const iterationOptions = useMemo(() => {
     const fromApi = iterationPaths?.iterations ?? []
@@ -147,35 +161,43 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   }, [types])
 
   useEffect(() => {
-    if (open) {
-      setTitle(draft?.title ?? '')
-      setBodyHtml(draft?.bodyHtml ?? '')
-      setAssignedTo(defaultAssignee)
-      setAreaPath(defaultAreaPath || rootPath)
-      setIterationPath(selectedIteration)
-      setTags(draft?.tags ?? [])
-      setExtraTags(draft?.tags ?? [])
-      setPriority(draft?.priority ?? '')
-      setType(
-        draft?.type ||
-          types.find((entry) => entry.name === 'Bug')?.name ||
-          types[0]?.name ||
-          'Bug',
-      )
-      setPeople(teamAssignees)
-      setSubmitting(false)
-      for (const url of blobUrls.current) URL.revokeObjectURL(url)
-      blobUrls.current = []
-      pendingUploads.current.clear()
-      requestAnimationFrame(() => {
-        document.getElementById('quick-create-title')?.focus()
-      })
+    if (!open) {
+      wasOpen.current = false
+      return
     }
+    // Reset only on open — late query updates (assignees, settings) must not
+    // clobber what the user already typed/selected in the open dialog.
+    if (wasOpen.current) return
+    wasOpen.current = true
+    setTitle(draft?.title ?? '')
+    setBodyHtml(draft?.bodyHtml ?? '')
+    setAssignedTo(defaultAssignee)
+    setAreaPath(rememberedAreaPath || firstAreaPath || defaultAreaPath || rootPath)
+    setIterationPath(selectedIteration)
+    setTags(draft?.tags ?? [])
+    setExtraTags(draft?.tags ?? [])
+    setPriority(draft?.priority ?? '')
+    setType(
+      draft?.type ||
+        types.find((entry) => entry.name === 'Bug')?.name ||
+        types[0]?.name ||
+        'Bug',
+    )
+    setPeople(teamAssignees)
+    setSubmitting(false)
+    for (const url of blobUrls.current) URL.revokeObjectURL(url)
+    blobUrls.current = []
+    pendingUploads.current.clear()
+    requestAnimationFrame(() => {
+      document.getElementById('quick-create-title')?.focus()
+    })
   }, [
     open,
     draft,
     types,
     defaultAssignee,
+    rememberedAreaPath,
+    firstAreaPath,
     defaultAreaPath,
     rootPath,
     teamAssignees,
@@ -188,6 +210,8 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
       for (const url of blobUrls.current) URL.revokeObjectURL(url)
     }
   }, [])
+
+  const wasOpen = useRef(false)
 
   const handleSearch = useCallback(
     (query: string) => {
@@ -279,10 +303,9 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
         for (const blobUrl of blobSrcs) {
           const file = pendingUploads.current.get(blobUrl)
           if (!file) continue
-          const detail = await api.uploadAttachment(created.id, file)
-          rev = detail.rev
-          const latest = detail.attachments[detail.attachments.length - 1]
-          if (latest?.url) finalHtml = finalHtml.split(blobUrl).join(latest.url)
+          const uploaded = await api.uploadAttachment(created.id, file)
+          rev = uploaded.rev
+          if (uploaded.url) finalHtml = finalHtml.split(blobUrl).join(uploaded.url)
           URL.revokeObjectURL(blobUrl)
           pendingUploads.current.delete(blobUrl)
         }
@@ -297,7 +320,12 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
         }
       }
 
-      void updateSettings.mutateAsync({ lastAssignee: nextAssignee })
+      void updateSettings
+        .mutateAsync({
+          lastAssignee: nextAssignee,
+          lastAreaPath: areaPath.trim(),
+        })
+        .catch((error) => debugLog('[quick-create] persist last settings failed', String(error)))
       if (draft?.mattermostCardId) {
         await requireAzureApi().linkMattermostCard({
           cardId: draft.mattermostCardId,
