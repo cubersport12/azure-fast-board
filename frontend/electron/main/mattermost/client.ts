@@ -4,7 +4,6 @@ import {
 } from '../credentials'
 import { getConnection, getSettings } from '../store'
 import type {
-  ConnectionConfig,
   MattermostBoardCardsResult,
   MattermostBoardInfo,
   WorkItemDetail,
@@ -562,7 +561,7 @@ export async function shareWorkItemToMattermost(
   detail: WorkItemDetail,
   target: MattermostShareTarget,
   downloadMedia: (url: string) => Promise<{ mimeType: string; dataBase64: string }>,
-  options?: { reason?: 'create' | 'share' },
+  options?: { reason?: 'create' | 'share'; comment?: string },
 ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
   try {
     const connection = getConnection()
@@ -630,6 +629,27 @@ export async function shareWorkItemToMattermost(
 
     if (!postResponse.ok) {
       return { ok: false, message: `Не удалось отправить в Mattermost: ${await readError(postResponse)}` }
+    }
+
+    // Первый комментарий в треде — сообщение из диалога отправки.
+    const createdPost = (await postResponse.json().catch(() => null)) as { id?: string } | null
+    const threadComment = options?.comment?.trim()
+    if (createdPost?.id && threadComment) {
+      const replyResponse = await mmFetch(session, '/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel_id: channelId,
+          message: threadComment,
+          root_id: createdPost.id,
+        }),
+      })
+      if (!replyResponse.ok) {
+        return {
+          ok: true,
+          message: `Отправлено, но комментарий не добавился: ${await readError(replyResponse)}`,
+        }
+      }
     }
 
     return {

@@ -1073,6 +1073,9 @@ export class AzureClient {
     const description = current.fields?.['System.Description']
       ? String(current.fields['System.Description'])
       : ''
+    const reproSteps = current.fields?.[ADO_FIELD_REPRO_STEPS]
+      ? String(current.fields[ADO_FIELD_REPRO_STEPS])
+      : ''
     // Local helper: strip matching <img> (keeps client free of frontend imports)
     const stripImg = (html: string, target: string) => {
       if (!html || !target.trim()) return html
@@ -1098,6 +1101,7 @@ export class AzureClient {
         .trim()
     }
     const nextDescription = stripImg(description, attachmentUrl)
+    const nextReproSteps = stripImg(reproSteps, attachmentUrl)
     const ops: Array<Record<string, unknown>> = []
     if (relationIndex >= 0) {
       ops.push({ op: 'remove', path: `/relations/${relationIndex}` })
@@ -1107,6 +1111,15 @@ export class AzureClient {
         op: 'add',
         path: '/fields/System.Description',
         value: nextDescription || '',
+      })
+    }
+    // Bug cards keep their body in ReproSteps — clean it too (detail page renders
+    // ReproSteps for bugs, Description for the rest).
+    if (nextReproSteps !== reproSteps) {
+      ops.push({
+        op: 'add',
+        path: `/fields/${ADO_FIELD_REPRO_STEPS}`,
+        value: nextReproSteps || '',
       })
     }
     if (!ops.length) {

@@ -206,6 +206,9 @@ export function getSettings() {
     boardCardFieldPresets: normalizeBoardCardFieldPresets(settings.boardCardFieldPresets),
     activeBoardCardFieldPresetId:
       String(settings.activeBoardCardFieldPresetId || '').trim() || DEFAULT_BOARD_CARD_PRESET_ID,
+    boardVisibleColumns: Array.isArray(settings.boardVisibleColumns)
+      ? settings.boardVisibleColumns.map((entry) => String(entry).trim()).filter(Boolean)
+      : [],
     selectFavorites: normalizeSelectFavorites(
       settings.selectFavorites as Record<string, unknown> | undefined,
     ),

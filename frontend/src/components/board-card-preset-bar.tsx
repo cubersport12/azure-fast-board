@@ -5,9 +5,11 @@ import {
   type BoardCardFieldId,
   type BoardCardFieldPreset,
 } from '../../shared/types'
+import { boardColumnsFromStates } from '../../shared/board-columns'
 import { Button } from '@/components/ui/button'
+import { Dropdown } from '@/components/ui/dropdown'
 import { Dialog, Input, Label } from '@/components/ui/primitives'
-import { useSettings, useUpdateSettings } from '@/hooks/use-azure'
+import { useSettings, useUpdateSettings, useWorkItemTypes } from '@/hooks/use-azure'
 import { BOARD_CARD_FIELD_OPTIONS } from '@/lib/board-card-presets'
 import { cn } from '@/lib/utils'
 
@@ -112,11 +114,26 @@ function EditorDialog({
 
 export function BoardCardPresetBar() {
   const { data: settings } = useSettings()
+  const { data: types = [] } = useWorkItemTypes()
   const updateSettings = useUpdateSettings()
   const presets = settings?.boardCardFieldPresets ?? []
   const activeId = settings?.activeBoardCardFieldPresetId || DEFAULT_BOARD_CARD_PRESET_ID
   const active = presets.find((p) => p.id === activeId) ?? null
   const isDefault = active?.id === DEFAULT_BOARD_CARD_PRESET_ID
+
+  const columnOptions = useMemo(() => {
+    const knownStates = [
+      ...new Set(
+        types
+          .filter((entry) => /^(bug|task)$/i.test(entry.name))
+          .flatMap((entry) => entry.states.map((state) => state.name)),
+      ),
+    ]
+    return boardColumnsFromStates(knownStates).map((column) => ({
+      value: column.name,
+      label: column.name,
+    }))
+  }, [types])
 
   const [open, setOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -141,21 +158,32 @@ export function BoardCardPresetBar() {
   const persist = (patch: {
     boardCardFieldPresets?: BoardCardFieldPreset[]
     activeBoardCardFieldPresetId?: string
+    boardVisibleColumns?: string[]
   }) => void updateSettings.mutateAsync(patch)
 
+  const visibleColumns = settings?.boardVisibleColumns ?? []
+
   return (
-    <div ref={rootRef} className="relative">
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-1"
-          onClick={() => setOpen((v) => !v)}
-        >
-          {label}
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-        </Button>
+    <div ref={rootRef} className="relative flex items-center gap-1">
+      <Dropdown
+        multiple
+        options={columnOptions}
+        value={visibleColumns}
+        onChange={(columns) => persist({ boardVisibleColumns: columns })}
+        placeholder="Все колонки"
+        emptyLabel="Все колонки"
+        searchPlaceholder="Поиск колонки…"
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {label}
+        <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+      </Button>
         {active && (
           <>
             <Button
@@ -188,10 +216,8 @@ export function BoardCardPresetBar() {
             )}
           </>
         )}
-      </div>
 
-      {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+      {open && (        <div className="absolute right-0 top-full z-30 mt-1 min-w-[220px] rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
           {presets.map((preset) => (
             <button
               key={preset.id}

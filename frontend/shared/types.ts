@@ -166,6 +166,8 @@ export interface AppSettings {
   boardCardFieldPresets: BoardCardFieldPreset[]
   /** Active board card field preset id (defaults to «По умолчанию»). */
   activeBoardCardFieldPresetId: string
+  /** Kanban: column names shown on the board; empty = show all. Selected columns also scope the WIQL query. */
+  boardVisibleColumns: string[]
   /** Starred dropdown options keyed by Dropdown `favoritesKey` (keeps label for search-backed lists). */
   selectFavorites: Record<string, SelectFavoriteOption[]>
   notifications: NotificationSettings
@@ -519,6 +521,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   filterPresets: [],
   boardCardFieldPresets: [DEFAULT_BOARD_CARD_PRESET],
   activeBoardCardFieldPresetId: DEFAULT_BOARD_CARD_PRESET_ID,
+  boardVisibleColumns: [],
   selectFavorites: {},
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
 }

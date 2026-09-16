@@ -1,6 +1,16 @@
 import { MoreVertical, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
 import { Dropdown } from '@/components/ui/dropdown'
 import { Dialog, Input, Label } from '@/components/ui/primitives'
@@ -16,6 +26,80 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { SubscribedIteration } from '../../shared/types'
 
 const EMPTY_SUBSCRIBED: SubscribedIteration[] = []
+
+function SortableSprintRow({
+  sprint,
+  active,
+  disabled,
+  onSelect,
+  onMenu,
+  onUnsubscribe,
+}: {
+  sprint: SubscribedIteration
+  active: boolean
+  disabled?: boolean
+  onSelect: () => void
+  onMenu: (rect: DOMRect) => void
+  onUnsubscribe: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: sprint.path,
+    disabled,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        'group flex items-center gap-0.5 rounded-md',
+        active && 'bg-sky-50 dark:bg-sky-950',
+        isDragging && 'z-10 opacity-70 shadow-md',
+      )}
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        title={sprint.path}
+        className={cn(
+          'min-w-0 flex-1 cursor-grab truncate rounded-md px-3 py-1.5 text-left text-sm active:cursor-grabbing',
+          disabled
+            ? 'text-slate-400 dark:text-slate-600'
+            : active
+              ? 'font-medium text-sky-700 dark:text-sky-300'
+              : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800',
+        )}
+        {...attributes}
+        {...listeners}
+        onClick={onSelect}
+      >
+        {sprint.name}
+      </button>
+      {!disabled && (
+        <>
+          <button
+            type="button"
+            className="rounded p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            title="Действия"
+            aria-label={`Меню ${sprint.name}`}
+            onClick={(e) => onMenu(e.currentTarget.getBoundingClientRect())}
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="mr-1 rounded p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            title="Отписаться"
+            aria-label={`Отписаться от ${sprint.name}`}
+            onClick={onUnsubscribe}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
 
 export function SprintNav({ disabled }: { disabled?: boolean }) {
   const { data: settings } = useSettings()
@@ -34,6 +118,32 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
 
   const subscribed = settings?.subscribedIterations ?? EMPTY_SUBSCRIBED
   const selectedPath = settings?.selectedIterationPath ?? ''
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  )
+  /** Перетаскивание завершено — подавляем следующий click, чтобы не выбрать спринт. */
+  const suppressClickRef = useRef(false)
+
+  /** Порядок спринтов хранится локально — это порядок массива subscribedIterations. */
+  const onDragStart = () => {
+    suppressClickRef.current = true
+  }
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    window.setTimeout(() => {
+      suppressClickRef.current = false
+    }, 0)
+    if (!over || active.id === over.id) return
+    const from = subscribed.findIndex((entry) => entry.path === active.id)
+    const to = subscribed.findIndex((entry) => entry.path === over.id)
+    if (from < 0 || to < 0) return
+    const next = [...subscribed]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    persist({ subscribedIterations: next })
+  }
 
   const availableOptions = useMemo(() => {
     const iterations = iterationPaths?.iterations ?? []
@@ -178,61 +288,43 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
         Не выбрано
       </button>
 
-      {subscribed.map((sprint) => {
-        const active = selectedPath.toLowerCase() === sprint.path.toLowerCase()
-        return (
-          <div
-            key={sprint.path}
-            className={cn(
-              'group flex items-center gap-0.5 rounded-md',
-              active && 'bg-sky-50 dark:bg-sky-950',
-            )}
-          >
-            <button
-              type="button"
-              disabled={disabled}
-              title={sprint.path}
-              className={cn(
-                'min-w-0 flex-1 truncate px-3 py-1.5 text-left text-sm',
-                disabled
-                  ? 'text-slate-400 dark:text-slate-600'
-                  : active
-                    ? 'font-medium text-sky-700 dark:text-sky-300'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800',
-              )}
-              onClick={() => select(sprint.path)}
-            >
-              {sprint.name}
-            </button>
-            {!disabled && (
-              <>
-                <button
-                  type="button"
-                  className="rounded p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                  title="Действия"
-                  aria-label={`Меню ${sprint.name}`}
-                  onClick={(e) => {
-                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                    setMenuPos({ top: rect.bottom + 2, left: rect.right - 140 })
-                    setMenuPath(sprint.path)
-                  }}
-                >
-                  <MoreVertical className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className="mr-1 rounded p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                  title="Отписаться"
-                  aria-label={`Отписаться от ${sprint.name}`}
-                  onClick={() => unsubscribe(sprint.path)}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </>
-            )}
-          </div>
-        )
-      })}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => {
+          window.setTimeout(() => {
+            suppressClickRef.current = false
+          }, 0)
+        }}
+      >
+        <SortableContext
+          items={subscribed.map((entry) => entry.path)}
+          strategy={verticalListSortingStrategy}
+        >
+          {subscribed.map((sprint) => {
+            const active = selectedPath.toLowerCase() === sprint.path.toLowerCase()
+            return (
+              <SortableSprintRow
+                key={sprint.path}
+                sprint={sprint}
+                active={active}
+                disabled={disabled}
+                onSelect={() => {
+                  if (suppressClickRef.current) return
+                  select(sprint.path)
+                }}
+                onMenu={(rect) => {
+                  setMenuPos({ top: rect.bottom + 2, left: rect.right - 140 })
+                  setMenuPath(sprint.path)
+                }}
+                onUnsubscribe={() => unsubscribe(sprint.path)}
+              />
+            )
+          })}
+        </SortableContext>
+      </DndContext>
 
       {menuPath &&
         createPortal(

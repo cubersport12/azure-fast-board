@@ -9,7 +9,7 @@ import {
   Settings2,
   Wifi,
 } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { getAzureApi, requireAzureApi } from '@/lib/azure-api'
@@ -54,6 +54,23 @@ const SYNC_BADGE_VARIANT: Record<
   offline: 'secondary',
 }
 
+const SIDEBAR_MIN_WIDTH = 200
+const SIDEBAR_MAX_WIDTH = 480
+const SIDEBAR_DEFAULT_WIDTH = 224
+const SIDEBAR_WIDTH_KEY = 'afb.sidebar-width'
+
+function initialSidebarWidth() {
+  try {
+    const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
+    if (Number.isFinite(raw) && raw >= SIDEBAR_MIN_WIDTH && raw <= SIDEBAR_MAX_WIDTH) {
+      return raw
+    }
+  } catch {
+    // localStorage unavailable — fall through to default.
+  }
+  return SIDEBAR_DEFAULT_WIDTH
+}
+
 export function AppShell() {
   useAppHotkeys()
   useTheme()
@@ -71,9 +88,48 @@ export function AppShell() {
   const { data: connection } = useConnection()
   const { data: currentUser } = useCurrentUser()
 
+  // Перетаскиваемый сплиттер ширины левой панели (позиция — в localStorage).
+  const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth)
+  const sidebarWidthRef = useRef(sidebarWidth)
+  sidebarWidthRef.current = sidebarWidth
+  const [resizing, setResizing] = useState(false)
+
+  useEffect(() => {
+    if (!resizing) return
+    const onMove = (event: PointerEvent) => {
+      const next = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, event.clientX))
+      sidebarWidthRef.current = next
+      setSidebarWidth(next)
+    }
+    const onUp = () => {
+      setResizing(false)
+      try {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current))
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    document.body.style.cursor = 'col-resize'
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+    }
+  }, [resizing])
+
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      <aside className="flex w-56 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
+    <div
+      className={cn(
+        'flex h-screen bg-background text-foreground',
+        resizing && 'select-none',
+      )}
+    >
+      <aside
+        style={{ width: sidebarWidth }}
+        className="flex flex-none flex-col border-r border-border bg-sidebar text-sidebar-foreground"
+      >
         <div className="border-b border-sidebar-border px-4 py-4">
           <div className="text-sm font-semibold tracking-tight">Azure Fast Board</div>
           <div className="mt-1 truncate text-[11px] text-muted-foreground">
@@ -121,6 +177,20 @@ export function AppShell() {
           <AppUpdateButtons />
         </div>
       </aside>
+
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        title="Потяните, чтобы изменить ширину панели"
+        onPointerDown={(event) => {
+          event.preventDefault()
+          setResizing(true)
+        }}
+        className={cn(
+          'w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40',
+          resizing && 'bg-primary/50',
+        )}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-2.5">

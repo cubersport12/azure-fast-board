@@ -10,6 +10,7 @@ import {
   Flag,
   Folder,
   Layers,
+  Loader2,
   MessageSquare,
   Paperclip,
   RefreshCw,
@@ -17,15 +18,17 @@ import {
   Save,
   Send,
   Tag,
+  Trash2,
   User,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthenticatedHtml, AuthenticatedImage } from '@/components/authenticated-media'
-import { ImageViewerDialog } from '@/components/image-viewer-dialog'
+import { extractHtmlImageSrcs } from '@/lib/authenticated-media'
+import { ImageViewerDialog, type ViewerImage } from '@/components/image-viewer-dialog'
 import { RichTextEditor, htmlContentEqual, htmlPlainText, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Button } from '@/components/ui/button'
-import { Badge, Card, Input, Label } from '@/components/ui/primitives'
+import { Badge, Card, Dialog, Input, Label } from '@/components/ui/primitives'
 import { Dropdown } from '@/components/ui/dropdown'
 import { TagsField } from '@/components/tags-field'
 import { SendToMattermostButton } from '@/features/mattermost/send-to-mattermost-button'
@@ -55,6 +58,7 @@ import {
   type AttachmentUpload,
   type BoardNotification,
   type WorkItem,
+  type WorkItemAttachment,
 } from '../../../shared/types'
 import { buildWorkItemWebUrl } from '../../../shared/utils'
 
@@ -79,6 +83,20 @@ function getInitials(name?: string) {
 }
 
 const IMAGE_ATTACHMENT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i
+
+const ATTACHMENT_GUID_RE = /\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+
+/** Стабильный ключ картинки: guid вложения, либо сам URL. */
+function imageKey(src?: string | null) {
+  const value = (src || '').trim()
+  if (!value) return ''
+  const guid = ATTACHMENT_GUID_RE.exec(value)?.[1]?.toLowerCase()
+  return guid || value.toLowerCase()
+}
+
+// Блок «Вложения» скрыт по требованию — вернуть true, если снова нужен
+// (кнопка удаления вложений и просмотрщик сохранены).
+const SHOW_ATTACHMENTS_SECTION = false
 
 function isImageAttachment(name?: string) {
   return IMAGE_ATTACHMENT_RE.test(name || '')
@@ -122,7 +140,10 @@ export function WorkItemDetailPage() {
   const [savingBody, setSavingBody] = useState(false)
   const [activeHighlightCommentId, setActiveHighlightCommentId] = useState<number | null>(null)
   const [copiedId, setCopiedId] = useState(false)
-  const [viewerImage, setViewerImage] = useState<{ src: string; alt: string } | null>(null)
+  const [viewerState, setViewerState] = useState<{ images: ViewerImage[]; index: number } | null>(
+    null,
+  )
+  const [removingAttachmentId, setRemovingAttachmentId] = useState<string | null>(null)
 
   const selectedIteration = settings?.selectedIterationPath?.trim() || ''
   const areas = areaPaths?.areas ?? []
@@ -134,6 +155,41 @@ export function WorkItemDetailPage() {
     dirty && bodyHtml != null && htmlPlainText(bodyHtml).length > 0
       ? bodyHtml
       : serverBodyHtml
+
+  /** Все картинки карточки для галереи: вложения, описание, комментарии. */
+  const galleryImages = useMemo(() => {
+    if (!data) return [] as ViewerImage[]
+    const out: ViewerImage[] = []
+    const seen = new Set<string>()
+    const push = (src: string | undefined | null, alt: string) => {
+      const key = imageKey(src)
+      if (!key || seen.has(key)) return
+      seen.add(key)
+      out.push({ src: src as string, alt })
+    }
+    for (const attachment of data.attachments) {
+      if (isImageAttachment(attachment.name)) push(attachment.url, attachment.name)
+    }
+    for (const src of extractHtmlImageSrcs(serverBodyHtml)) {
+      push(src, isReproBody ? 'Шаги воспроизведения' : 'Описание')
+    }
+    for (const comment of data.comments ?? []) {
+      for (const src of extractHtmlImageSrcs(comment.text)) {
+        push(src, comment.createdBy ? `Комментарий · ${comment.createdBy}` : 'Комментарий')
+      }
+    }
+    return out
+  }, [data, serverBodyHtml, isReproBody])
+
+  const openViewer = (src: string, alt: string) => {
+    const key = imageKey(src)
+    const index = galleryImages.findIndex((image) => imageKey(image.src) === key)
+    if (index >= 0) {
+      setViewerState({ images: galleryImages, index })
+    } else {
+      setViewerState({ images: [{ src, alt }], index: 0 })
+    }
+  }
 
   useEffect(() => {
     setPeople(teamAssignees)
@@ -383,6 +439,25 @@ export function WorkItemDetailPage() {
     return uploaded.url
   }, [workItemId])
 
+  const onRemoveAttachment = async (attachment: WorkItemAttachment) => {
+    if (!window.confirm(`Удалить вложение «${attachment.name}»?`)) return
+    setRemovingAttachmentId(attachment.id)
+    try {
+      const detail = await requireAzureApi().removeAttachment(workItemId, attachment.url)
+      qc.setQueryData(queryKeys.workItem(workItemId), detail)
+      void qc.invalidateQueries({ queryKey: queryKeys.workItems })
+      setViewerState((current) => {
+        const shown = current?.images[current.index]
+        return shown && mediaUrlsMatch(shown.src, attachment.url) ? null : current
+      })
+      setStatus(`Вложение удалено: ${attachment.name}`)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Не удалось удалить вложение')
+    } finally {
+      setRemovingAttachmentId(null)
+    }
+  }
+
   const onBodyUpload = useCallback(
     async (file: AttachmentUpload) => {
       setStatus('Загрузка изображения…')
@@ -448,8 +523,42 @@ export function WorkItemDetailPage() {
     setStatus(null)
   }
 
-  const saveBody = async () => {
-    if (!data || !canSaveBody) return
+  // Guard: card edits or a draft comment must ask before the card is left.
+  const hasUnsavedWork = canSaveBody || !isRichTextEmpty(comment)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasUnsavedWork && currentLocation.pathname !== nextLocation.pathname,
+  )
+
+  const stayOnCard = () => {
+    if (blocker.state === 'blocked') blocker.reset()
+  }
+
+  const discardAndLeave = () => {
+    if (blocker.state !== 'blocked') return
+    handleCancel()
+    setComment('')
+    blocker.proceed()
+  }
+
+  const saveAndLeave = async () => {
+    if (blocker.state !== 'blocked') return
+    if (canSaveBody) {
+      const saved = await saveBody()
+      if (!saved) return
+    }
+    if (!isRichTextEmpty(comment)) {
+      try {
+        await addComment.mutateAsync(comment)
+      } catch {
+        return
+      }
+    }
+    blocker.proceed()
+  }
+
+  const saveBody = async (): Promise<boolean> => {
+    if (!data || !canSaveBody) return false
     setSavingBody(true)
     try {
       const fields: Record<string, string | number | boolean | null | undefined> = {}
@@ -458,29 +567,21 @@ export function WorkItemDetailPage() {
         fields['System.Title'] = title.trim()
       }
 
-      let bodySkippedImages = false
+      // WYSIWYG: сохраняем ровно то, что видит пользователь, включая случай
+      // «удалена последняя картинка + дописан текст».
       const bodyChanged = bodyHtml != null && !htmlContentEqual(draftBody, serverBodyHtml)
       if (bodyChanged) {
         const previousUrls = descriptionImageUrls(serverBodyHtml)
         const nextUrls = descriptionImageUrls(draftBody)
-        const keptAnyImage =
-          previousUrls.size === 0 ||
-          [...previousUrls].some((url) =>
-            [...nextUrls].some((entry) => mediaUrlsMatch(entry, url)),
-          )
-        if (!keptAnyImage) {
-          bodySkippedImages = true
-        } else {
-          for (const url of previousUrls) {
-            if ([...nextUrls].some((entry) => mediaUrlsMatch(entry, url))) continue
-            try {
-              await requireAzureApi().removeAttachment(workItemId, url)
-            } catch {
-              // Continue saving even if relation cleanup fails.
-            }
+        for (const url of previousUrls) {
+          if ([...nextUrls].some((entry) => mediaUrlsMatch(entry, url))) continue
+          try {
+            await requireAzureApi().removeAttachment(workItemId, url)
+          } catch {
+            // Continue saving even if relation cleanup fails.
           }
-          fields[bodyField] = draftBody
         }
+        fields[bodyField] = draftBody
       }
 
       const nextIteration = iterationPath.trim()
@@ -518,7 +619,7 @@ export function WorkItemDetailPage() {
       if (!Object.keys(fields).length) {
         setDirty(false)
         setStatus('Нет изменений для сохранения')
-        return
+        return true
       }
 
       const fresh = await requireAzureApi().getWorkItem(workItemId)
@@ -528,14 +629,12 @@ export function WorkItemDetailPage() {
         fields,
       })
       setDirty(false)
-      setStatus(
-        bodySkippedImages
-          ? 'Сохранено (описание не обновлено — пропали картинки)'
-          : 'Сохранено',
-      )
+      setStatus('Сохранено')
       await qc.invalidateQueries({ queryKey: queryKeys.workItem(workItemId) })
+      return true
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Не удалось сохранить')
+      return false
     } finally {
       setSavingBody(false)
     }
@@ -751,9 +850,7 @@ export function WorkItemDetailPage() {
                   setDirty(true)
                 }}
                 onUploadImage={onBodyUpload}
-                onImageDoubleClick={(src) =>
-                  setViewerImage({ src, alt: 'Изображение из описания' })
-                }
+                onImageDoubleClick={(src) => openViewer(src, 'Описание')}
                 placeholder={
                   isReproBody
                     ? 'Опишите шаги для воспроизведения бага… Ctrl+V для вставки скриншота'
@@ -773,8 +870,8 @@ export function WorkItemDetailPage() {
               )} */}
             </Card>
 
-            {/* Attachments Card */}
-            {data.attachments.length > 0 && (
+            {/* Attachments Card (скрыта — см. SHOW_ATTACHMENTS_SECTION) */}
+            {SHOW_ATTACHMENTS_SECTION && data.attachments.length > 0 && (
               <Card className="p-5 shadow-xs border-border bg-card space-y-4">
                 <div className="flex items-center justify-between border-b border-border/60 pb-3">
                   <div className="flex items-center gap-2">
@@ -788,34 +885,55 @@ export function WorkItemDetailPage() {
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  {data.attachments.map((attachment) =>
-                    isImageAttachment(attachment.name) ? (
+                  {data.attachments.map((attachment) => {
+                    const removing = removingAttachmentId === attachment.id
+                    const deleteButton = (
                       <button
-                        key={attachment.id}
                         type="button"
-                        title={`Открыть ${attachment.name}`}
-                        onClick={() =>
-                          setViewerImage({ src: attachment.url, alt: attachment.name })
-                        }
-                        className="group overflow-hidden rounded-lg border border-border bg-muted/30 transition hover:border-primary/60 hover:shadow-sm"
+                        title={`Удалить ${attachment.name}`}
+                        disabled={removingAttachmentId != null}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void onRemoveAttachment(attachment)
+                        }}
+                        className="absolute -top-2 -right-2 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition hover:border-red-400 hover:text-red-600 disabled:opacity-50"
                       >
-                        <AuthenticatedImage
-                          src={attachment.url}
-                          alt={attachment.name}
-                          className="h-24 w-36 object-cover transition group-hover:scale-105"
-                        />
+                        {removing ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3 w-3" />
+                        )}
                       </button>
+                    )
+                    return isImageAttachment(attachment.name) ? (
+                      <div key={attachment.id} className="group relative">
+                        <button
+                          type="button"
+                          title={`Открыть ${attachment.name}`}
+                          onClick={() => openViewer(attachment.url, attachment.name)}
+                          className="block overflow-hidden rounded-lg border border-border bg-muted/30 transition hover:border-primary/60 hover:shadow-sm"
+                        >
+                          <AuthenticatedImage
+                            src={attachment.url}
+                            alt={attachment.name}
+                            className="h-24 w-36 object-cover transition group-hover:scale-105"
+                          />
+                        </button>
+                        {deleteButton}
+                      </div>
                     ) : (
-                      <span
-                        key={attachment.id}
-                        title={attachment.name}
-                        className="inline-flex max-w-56 items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80"
-                      >
-                        <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                        <span className="truncate">{attachment.name}</span>
-                      </span>
-                    ),
-                  )}
+                      <div key={attachment.id} className="relative">
+                        <span
+                          title={attachment.name}
+                          className="inline-flex max-w-56 items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-foreground/80"
+                        >
+                          <FileText className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                          <span className="truncate">{attachment.name}</span>
+                        </span>
+                        {deleteButton}
+                      </div>
+                    )
+                  })}
                 </div>
               </Card>
             )}
@@ -868,10 +986,10 @@ export function WorkItemDetailPage() {
                       className="max-w-none text-xs text-foreground/90 leading-relaxed [&_img]:mt-2 [&_img]:max-h-64 [&_img]:rounded-lg [&_img]:border [&_img]:border-border [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
                       html={renderCommentHtml(entry.text)}
                       onImageClick={(src) =>
-                        setViewerImage({
+                        openViewer(
                           src,
-                          alt: entry.createdBy ? `Изображение · ${entry.createdBy}` : 'Изображение',
-                        })
+                          entry.createdBy ? `Комментарий · ${entry.createdBy}` : 'Комментарий',
+                        )
                       }
                     />
                   </div>
@@ -1075,10 +1193,37 @@ export function WorkItemDetailPage() {
       </div>
 
       <ImageViewerDialog
-        src={viewerImage?.src ?? null}
-        alt={viewerImage?.alt || 'Изображение'}
-        onClose={() => setViewerImage(null)}
+        images={viewerState?.images ?? []}
+        index={viewerState?.index ?? null}
+        onClose={() => setViewerState(null)}
       />
+
+      <Dialog
+        open={blocker.state === 'blocked'}
+        onClose={stayOnCard}
+        title="Несохранённые изменения"
+      >
+        <p className="text-sm text-foreground/90">
+          В карточке есть несохранённые изменения. Закрыть карточку без сохранения?
+        </p>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={stayOnCard}>
+            Остаться
+          </Button>
+          <Button variant="outline" onClick={discardAndLeave}>
+            Не сохранять
+          </Button>
+          <Button
+            onClick={() => void saveAndLeave()}
+            disabled={savingBody || addComment.isPending}
+          >
+            {(savingBody || addComment.isPending) && (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            )}
+            Сохранить и закрыть
+          </Button>
+        </div>
+      </Dialog>
     </div>
   )
 }

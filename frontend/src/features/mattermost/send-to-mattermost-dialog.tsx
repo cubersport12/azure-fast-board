@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Dialog, Label } from '@/components/ui/primitives'
+import { Dialog, Label, Textarea } from '@/components/ui/primitives'
 import { Dropdown, type DropdownOption } from '@/components/ui/dropdown'
 import { useSettings, useUpdateSettings } from '@/hooks/use-azure'
 import { getAzureApi } from '@/lib/azure-api'
@@ -24,6 +24,7 @@ export function SendToMattermostDialog() {
   const [loadingLists, setLoadingLists] = useState(false)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
+  const [comment, setComment] = useState('')
   const { data: settings } = useSettings()
   const updateSettings = useUpdateSettings()
 
@@ -43,6 +44,7 @@ export function SendToMattermostDialog() {
     setChannels([])
     setUsers([])
     setMessage('')
+    setComment('')
     setSending(false)
 
     const api = getAzureApi()
@@ -238,6 +240,17 @@ export function SendToMattermostDialog() {
           </div>
         )}
 
+        <div className="space-y-1">
+          <Label htmlFor="mattermost-comment">Сообщение (первый комментарий в треде)</Label>
+          <Textarea
+            id="mattermost-comment"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Необязательно — придёт первым комментарием под карточкой в Mattermost"
+            rows={3}
+          />
+        </div>
+
         <p className="text-[11px] text-slate-500 dark:text-slate-400">
           В сообщение попадут название, описание, изображения и ссылка на карточку в TFS.
         </p>
@@ -270,8 +283,8 @@ export function SendToMattermostDialog() {
               try {
                 const result = await api.shareWorkItemToMattermost(
                   mode === 'channel'
-                    ? { workItemId, mode: 'channel', teamId, channelId }
-                    : { workItemId, mode: 'user', userId },
+                    ? { workItemId, mode: 'channel', teamId, channelId, comment: comment.trim() || undefined }
+                    : { workItemId, mode: 'user', userId, comment: comment.trim() || undefined },
                 )
                 setMessage(result.message)
                 if (result.ok) {

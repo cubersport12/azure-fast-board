@@ -14,7 +14,7 @@ import { useQueries } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { memo, useMemo, useState } from 'react'
 import type { BoardCardFieldId, BoardColumn, WorkItem } from '../../../shared/types'
-import { boardColumnsFromStates, resolveBoardColumnName } from '../../../shared/board-columns'
+import { boardColumnsFromStates, resolveBoardColumnName, statesForColumns } from '../../../shared/board-columns'
 import { BoardCardPresetBar } from '@/components/board-card-preset-bar'
 import { WorkItemFilterBar } from '@/components/work-item-filter-bar'
 import { Button } from '@/components/ui/button'
@@ -135,11 +135,34 @@ const Column = memo(function Column({
 })
 
 export function BoardPage() {
-  // States filter is intentionally ignored on the kanban — a moved card must
-  // stay visible in its new column (all states are always shown here).
-  const { data: items = [], isPending } = useWorkItems({ ignoreStates: true })
   const { data: types = [] } = useWorkItemTypes()
   const { data: settings } = useSettings()
+
+  const knownStates = useMemo(
+    () => [
+      ...new Set(
+        types
+          .filter((entry) => /^(bug|task)$/i.test(entry.name))
+          .flatMap((entry) => entry.states.map((state) => state.name)),
+      ),
+    ],
+    [types],
+  )
+
+  /** View setting: empty = show all columns (query unscoped), otherwise only the picked ones. */
+  const selectedColumns = useMemo(() => settings?.boardVisibleColumns ?? [], [settings?.boardVisibleColumns])
+  const columnStateNames = useMemo(
+    () => statesForColumns(selectedColumns, knownStates),
+    [selectedColumns, knownStates],
+  )
+
+  // States filter is intentionally ignored on the kanban — a moved card must
+  // stay visible in its new column. With a column selection the query is scoped
+  // to the picked states so hidden columns are not fetched at all.
+  const { data: items = [], isPending } = useWorkItems({
+    ignoreStates: columnStateNames.length === 0,
+    states: columnStateNames,
+  })
   const move = useMoveWorkItem()
   const search = useUiStore((s) => s.search)
   const { filters, setFilters } = usePersistedFilters()
@@ -192,18 +215,12 @@ export function BoardPage() {
     return map
   }, [commentQueries])
 
-  const knownStates = useMemo(
-    () => [
-      ...new Set(
-        types
-          .filter((entry) => /^(bug|task)$/i.test(entry.name))
-          .flatMap((entry) => entry.states.map((state) => state.name)),
-      ),
-    ],
-    [types],
-  )
-
-  const displayColumns = useMemo(() => boardColumnsFromStates(knownStates), [knownStates])
+  const displayColumns = useMemo(() => {
+    const all = boardColumnsFromStates(knownStates)
+    if (!selectedColumns.length) return all
+    const selectedKey = new Set(selectedColumns.map((name) => name.trim().toLowerCase()))
+    return all.filter((column) => selectedKey.has(column.name.trim().toLowerCase()))
+  }, [knownStates, selectedColumns])
 
   const grouped = useMemo(() => {
     const map = new Map<string, WorkItem[]>()
@@ -218,12 +235,15 @@ export function BoardPage() {
 
   const extraColumns = useMemo(
     () =>
-      [...grouped.entries()]
-        .filter(
-          ([name]) => !displayColumns.some((column) => column.name === name),
-        )
-        .map(([name, columnItems]) => ({ name, columnItems })),
-    [grouped, displayColumns],
+      // При выбранной колонке-наборе «лишние» состояния не показываем вовсе.
+      selectedColumns.length
+        ? []
+        : [...grouped.entries()]
+            .filter(
+              ([name]) => !displayColumns.some((column) => column.name === name),
+            )
+            .map(([name, columnItems]) => ({ name, columnItems })),
+    [grouped, displayColumns, selectedColumns],
   )
 
   const onDragStart = (event: DragStartEvent) => {

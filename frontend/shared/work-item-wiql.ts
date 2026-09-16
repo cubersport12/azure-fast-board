@@ -2,6 +2,9 @@
 export const WIQL_ME = 'Me'
 export const WIQL_UNASSIGNED = 'Unassigned'
 
+/** Filter sentinel: matches work items that have no tags at all. */
+export const WIQL_TAG_NONE = '__no_tags__'
+
 /** Notification engine (poll query + realtime filter) accepts these types only. */
 export const NOTIFICATION_WORK_ITEM_TYPES = ['Bug', 'Task']
 
@@ -59,8 +62,13 @@ export function buildWorkItemsWiql(query: WorkItemListQuery = {}) {
     wiql += peopleClause('System.CreatedBy', query.creators)
   }
   const tags = (query.tags ?? []).map((tag) => tag.trim()).filter(Boolean)
-  if (tags.length) {
-    wiql += ` AND (${tags.map((tag) => `[System.Tags] CONTAINS ${quote(tag)}`).join(' OR ')})`
+  // Tags is a long-text field on-prem: WIQL rejects `= ''` there, so the
+  // no-tags sentinel cannot be expressed server-side. When it is requested the
+  // whole tags clause is dropped (full scope) and useWorkItems filters
+  // `named tags ∪ no tags` client-side.
+  const namedTags = tags.filter((tag) => tag !== WIQL_TAG_NONE)
+  if (namedTags.length && !tags.includes(WIQL_TAG_NONE)) {
+    wiql += ` AND (${namedTags.map((tag) => `[System.Tags] CONTAINS ${quote(tag)}`).join(' OR ')})`
   }
   return `${wiql} Order By [System.ChangedDate] Desc`
 }

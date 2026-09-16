@@ -421,6 +421,7 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
   ipcMain.handle(
     IPC_CHANNELS.workItemsRemoveAttachment,
     async (_e, id: number, attachmentUrl: string) => {
+      notificationService?.noteSelfAction(id)
       return requireClient().removeAttachment(id, attachmentUrl)
     },
   )
@@ -660,6 +661,7 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
         teamId?: string
         channelId?: string
         userId?: string
+        comment?: string
       },
     ) => {
       try {
@@ -677,8 +679,12 @@ export function registerIpcHandlers(getMainWindow: () => Electron.BrowserWindow 
                 teamId: String(input?.teamId || ''),
                 channelId: String(input?.channelId || ''),
               } as const)
-        return await shareWorkItemToMattermost(detail, target, (url) =>
-          requireClient().downloadMedia(url),
+        const comment = String(input?.comment || '').trim()
+        return await shareWorkItemToMattermost(
+          detail,
+          target,
+          (url) => requireClient().downloadMedia(url),
+          { reason: 'share', comment: comment || undefined },
         )
       } catch (error) {
         throw toIpcError(error)
