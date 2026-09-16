@@ -190,6 +190,8 @@ export interface AzureFastBoardApi {
     teamId?: string
     channelId?: string
     userId?: string
+    /** Первое сообщение-комментарий в треде под карточкой. */
+    comment?: string
   }) => Promise<{ ok: boolean; message: string }>
   listMattermostBoards: (teamId: string, channelId: string) => Promise<MattermostBoardInfo[]>
   listMattermostBoardCards: (boardId: string) => Promise<MattermostBoardCardsResult>

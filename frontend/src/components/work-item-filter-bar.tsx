@@ -24,6 +24,7 @@ import {
   uniqueOptions,
   type WorkItemFilters,
 } from '@/lib/work-item-filters'
+import { WIQL_TAG_NONE } from '../../shared/work-item-wiql'
 import { cn } from '@/lib/utils'
 
 function newPresetId() {
@@ -378,7 +379,7 @@ export function WorkItemFilterBar({
       ]),
       assignees: [ME_ASSIGNEE, ...assignees],
       creators: [ME_ASSIGNEE, ...creators],
-      tags: merge(base.tags, filters.tags),
+      tags: merge(base.tags, filters.tags.filter((tag) => tag !== WIQL_TAG_NONE)),
     }
   }, [items, typeInfos, teamAssignees, columns, filters])
 
@@ -461,7 +462,7 @@ export function WorkItemFilterBar({
           multiple
           label="Теги"
           favoritesKey="filter-tags"
-          options={toOptions(options.tags)}
+          options={[{ value: WIQL_TAG_NONE, label: 'Без тегов' }, ...toOptions(options.tags)]}
           value={normalizedFilters.tags}
           onChange={(tags) => onChange({ ...normalizedFilters, tags })}
           placeholder="Все"

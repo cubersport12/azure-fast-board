@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, createHashRouter, RouterProvider } from 'react-router-dom'
 import { AppShell } from '@/components/app-shell'
 import { BoardPage } from '@/features/board/board-page'
 import { WorkItemDetailPage } from '@/features/work-item-detail/work-item-detail-page'
@@ -16,20 +16,25 @@ const queryClient = new QueryClient({
   },
 })
 
+// Data router (not declarative <HashRouter>): useBlocker in the detail page
+// requires DataRouterContext, which only data routers provide.
+const router = createHashRouter([
+  {
+    element: <AppShell />,
+    children: [
+      { index: true, element: <Navigate to="/board" replace /> },
+      { path: '/board', element: <BoardPage /> },
+      { path: '/work-items', element: <WorkItemsPage /> },
+      { path: '/work-items/:id', element: <WorkItemDetailPage /> },
+      { path: '/mattermost-board', element: <MattermostBoardPage /> },
+    ],
+  },
+])
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <HashRouter>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route index element={<Navigate to="/board" replace />} />
-            <Route path="/board" element={<BoardPage />} />
-            <Route path="/work-items" element={<WorkItemsPage />} />
-            <Route path="/work-items/:id" element={<WorkItemDetailPage />} />
-            <Route path="/mattermost-board" element={<MattermostBoardPage />} />
-          </Route>
-        </Routes>
-      </HashRouter>
+      <RouterProvider router={router} />
     </QueryClientProvider>
   )
 }

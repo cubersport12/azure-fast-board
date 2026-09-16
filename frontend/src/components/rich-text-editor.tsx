@@ -440,7 +440,10 @@ export function RichTextEditor({
               if (target.tagName !== 'IMG') return
               const img = target as HTMLImageElement
               const src = img.currentSrc || img.getAttribute('src') || ''
-              if (src) onImageDoubleClick(src)
+              if (!src) return
+              // blob:/data: из редактора маппим обратно на исходный URL —
+              // тогда галерея карточки находит это изображение.
+              onImageDoubleClick(blobToOriginalRef.current.get(src) || src)
             }
           : undefined
       }

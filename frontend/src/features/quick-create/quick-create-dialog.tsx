@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Calendar, FileText, Flag, Folder, Plus, Tag, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { RichTextEditor, isRichTextEmpty } from '@/components/rich-text-editor'
+import { RichTextEditor, htmlContentEqual, isRichTextEmpty } from '@/components/rich-text-editor'
 import { Dropdown } from '@/components/ui/dropdown'
 import { TagsField } from '@/components/tags-field'
 import { Dialog, Input, Label } from '@/components/ui/primitives'
@@ -88,6 +88,16 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   const searchTimer = useRef<number | null>(null)
   const pendingUploads = useRef(new Map<string, AttachmentUpload>())
   const blobUrls = useRef<string[]>([])
+  /** Values the dialog was opened with — closing asks when the user changed any. */
+  const initialDraftRef = useRef({
+    title: '',
+    assignee: '',
+    area: '',
+    iteration: '',
+    tags: [] as string[],
+    priority: '',
+  })
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false)
 
   useEffect(() => {
     setPeople(teamAssignees)
@@ -169,10 +179,19 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     // clobber what the user already typed/selected in the open dialog.
     if (wasOpen.current) return
     wasOpen.current = true
+    const initialArea = rememberedAreaPath || firstAreaPath || defaultAreaPath || rootPath
+    initialDraftRef.current = {
+      title: draft?.title ?? '',
+      assignee: defaultAssignee,
+      area: initialArea,
+      iteration: selectedIteration,
+      tags: draft?.tags ?? [],
+      priority: draft?.priority ?? '',
+    }
     setTitle(draft?.title ?? '')
     setBodyHtml(draft?.bodyHtml ?? '')
     setAssignedTo(defaultAssignee)
-    setAreaPath(rememberedAreaPath || firstAreaPath || defaultAreaPath || rootPath)
+    setAreaPath(initialArea)
     setIterationPath(selectedIteration)
     setTags(draft?.tags ?? [])
     setExtraTags(draft?.tags ?? [])
@@ -185,6 +204,7 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
     )
     setPeople(teamAssignees)
     setSubmitting(false)
+    setConfirmCloseOpen(false)
     for (const url of blobUrls.current) URL.revokeObjectURL(url)
     blobUrls.current = []
     pendingUploads.current.clear()
@@ -212,6 +232,36 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   }, [])
 
   const wasOpen = useRef(false)
+
+  const hasQuickCreateInput = () => {
+    const initial = initialDraftRef.current
+    return Boolean(
+      title.trim() !== initial.title.trim() ||
+        (!htmlContentEqual(bodyHtml, draft?.bodyHtml ?? '') && !isRichTextEmpty(bodyHtml)) ||
+        tags.join('\u0000') !== initial.tags.join('\u0000') ||
+        priority !== initial.priority ||
+        assignedTo.trim() !== initial.assignee.trim() ||
+        areaPath !== initial.area ||
+        iterationPath !== initial.iteration ||
+        pendingUploads.current.size > 0,
+    )
+  }
+
+  const tryClose = () => {
+    if (hasQuickCreateInput()) {
+      setConfirmCloseOpen(true)
+      return
+    }
+    setOpen(false)
+  }
+
+  const discardAndClose = () => {
+    for (const url of blobUrls.current) URL.revokeObjectURL(url)
+    blobUrls.current = []
+    pendingUploads.current.clear()
+    setConfirmCloseOpen(false)
+    setOpen(false)
+  }
 
   const handleSearch = useCallback(
     (query: string) => {
@@ -341,9 +391,10 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
   }
 
   return (
-    <Dialog
-      open={open}
-      onClose={() => setOpen(false)}
+    <>
+      <Dialog
+        open={open}
+        onClose={tryClose}
       title={draft?.mattermostCardId ? 'Создание из Mattermost' : 'Быстрое создание'}
       wide
     >
@@ -528,6 +579,25 @@ export function QuickCreateDialog({ defaultColumn }: { defaultColumn?: string })
           </div>
         </div>
       </form>
-    </Dialog>
+      </Dialog>
+
+      <Dialog
+        open={confirmCloseOpen}
+        onClose={() => setConfirmCloseOpen(false)}
+        title="Закрыть без сохранения?"
+      >
+        <p className="text-sm text-foreground/90">
+          В форме быстрого создания есть введённые данные. Закрыть и потерять их?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmCloseOpen(false)}>
+            Остаться
+          </Button>
+          <Button variant="outline" onClick={discardAndClose}>
+            Закрыть без сохранения
+          </Button>
+        </div>
+      </Dialog>
+    </>
   )
 }

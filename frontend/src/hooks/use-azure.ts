@@ -15,7 +15,7 @@ import type {
 import { requireAzureApi } from '@/lib/azure-api'
 import { EMPTY_FILTERS, filtersEqual, normalizeWorkItemFilters } from '@/lib/work-item-filters'
 import { useUiStore } from '@/stores/ui-store'
-import type { WorkItemListQuery } from '../../shared/work-item-wiql'
+import { WIQL_TAG_NONE, type WorkItemListQuery } from '../../shared/work-item-wiql'
 
 export const queryKeys = {
   workItems: ['workItems'] as const,
@@ -31,7 +31,12 @@ export const queryKeys = {
   views: ['views'] as const,
 }
 
-export function useWorkItems(options?: { unfiltered?: boolean; ignoreStates?: boolean }) {
+export function useWorkItems(options?: {
+  unfiltered?: boolean
+  ignoreStates?: boolean
+  /** Explicit state list (kanban column selection) — overrides the shared states filter. */
+  states?: string[]
+}) {
   const ready = useUiStore((s) => s.connectionReady)
   const { data: settings } = useSettings()
   const uiFilters = useUiStore((s) => s.filters)
@@ -46,15 +51,27 @@ export function useWorkItems(options?: { unfiltered?: boolean; ignoreStates?: bo
     : {
         iterationPath: iteration,
         types: filters.types,
-        // Kanban shows every state regardless of the shared states filter.
-        states: options?.ignoreStates ? [] : filters.states,
+        // Kanban shows every state regardless of the shared states filter,
+        // unless a column selection narrows the query explicitly.
+        states: options?.ignoreStates ? [] : (options?.states ?? filters.states),
         assignees: filters.assignees,
         creators: filters.creators,
         tags: filters.tags,
       }
   return useQuery<WorkItem[]>({
     queryKey: [...queryKeys.workItems, query],
-    queryFn: () => requireAzureApi().listWorkItems(query),
+    queryFn: async () => {
+      const items = await requireAzureApi().listWorkItems(query)
+      const queryTags = query.tags ?? []
+      if (!queryTags.includes(WIQL_TAG_NONE)) return items
+      // Tags is a long-text field on-prem — «no tags» is not expressible in
+      // WIQL, so the builder omits the tags clause and it is applied here.
+      const named = queryTags.filter((tag) => tag !== WIQL_TAG_NONE)
+      return items.filter(
+        (item) =>
+          item.tags.length === 0 || named.some((tag) => item.tags.includes(tag)),
+      )
+    },
     enabled: ready && Boolean(settings),
     staleTime: 25_000,
     refetchInterval: ready ? 30_000 : false,

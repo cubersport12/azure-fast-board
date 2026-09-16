@@ -3,6 +3,7 @@ import {
   buildWorkItemsWiql,
   isNotificationAllowedType,
   NOTIFICATION_WORK_ITEM_TYPES,
+  WIQL_TAG_NONE,
 } from '../shared/work-item-wiql'
 import { defaultWorkItemsWiql } from '../electron/main/azure/client'
 
@@ -45,6 +46,20 @@ describe('notification type filter', () => {
   it('builds poll WIQL restricted to allowed types', () => {
     const wiql = buildWorkItemsWiql({ types: NOTIFICATION_WORK_ITEM_TYPES })
     expect(wiql).toContain("[System.WorkItemType] IN ('Bug', 'Task')")
+  })
+
+  it('filters by tag with CONTAINS', () => {
+    expect(buildWorkItemsWiql({ tags: ['ci'] })).toContain("[System.Tags] CONTAINS 'ci'")
+  })
+
+  it('drops the tags clause for the no-tags sentinel (long-text field: = is rejected)', () => {
+    const wiql = buildWorkItemsWiql({ tags: [WIQL_TAG_NONE] })
+    expect(wiql).not.toContain('System.Tags')
+  })
+
+  it('drops the tags clause when named tags are combined with the sentinel', () => {
+    const wiql = buildWorkItemsWiql({ tags: ['ci', WIQL_TAG_NONE] })
+    expect(wiql).not.toContain('System.Tags')
   })
 
   it('accepts Bug/Task case-insensitively and rejects other types', () => {

@@ -1,4 +1,5 @@
 import type { WorkItem } from '../../shared/types'
+import { WIQL_TAG_NONE } from '../../shared/work-item-wiql'
 
 export interface WorkItemFilters {
   types: string[]
@@ -241,7 +242,13 @@ export function applyWorkItemFilters(
       if (!matchNamed && !matchMe) return false
     }
 
-    if (filters.tags.length && !filters.tags.some((tag) => item.tags.includes(tag))) return false
+    if (filters.tags.length) {
+      const wantsNoTags = filters.tags.includes(WIQL_TAG_NONE)
+      const named = filters.tags.filter((tag) => tag !== WIQL_TAG_NONE)
+      const matchNamed = named.some((tag) => item.tags.includes(tag))
+      const matchNone = wantsNoTags && item.tags.length === 0
+      if (!matchNamed && !matchNone) return false
+    }
 
     if (!q) return true
     return [item.title, item.type, item.state, item.assignedTo, String(item.id), ...item.tags]

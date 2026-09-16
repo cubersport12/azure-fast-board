@@ -36,3 +36,12 @@ export function boardColumnsFromStates(knownStates: string[] = []) {
 export function columnStateFallback(column: string) {
   return slotForState(column)?.label || 'New'
 }
+
+/** Known states whose resolved board column is one of the selected column names. */
+export function statesForColumns(selected: string[], knownStates: string[] = []) {
+  if (!selected.length) return []
+  const selectedKey = new Set(selected.map(normalizeStateKey))
+  return knownStates.filter((state) =>
+    selectedKey.has(normalizeStateKey(resolveBoardColumnName(state, knownStates))),
+  )
+}
