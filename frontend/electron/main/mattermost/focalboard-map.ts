@@ -83,7 +83,6 @@ function findProperty(
   if (type) return properties.find((prop) => str(prop.type) === type)
   return undefined
 }
-
 function resolveSelect(prop: FocalboardProperty | undefined, raw: unknown) {
   if (!prop) return ''
   const value = Array.isArray(raw) ? raw[0] : raw
@@ -160,11 +159,27 @@ export function mapFocalboardCards(
 ): MattermostBoardCardsResult {
   const properties = propertiesFrom(board, blocks)
   const views = blocks.filter((block) => str(block.type) === 'view')
-  const groupById = views
-    .map((view) => str(asRecord(view.fields)?.groupById || asRecord(view.fields)?.group_by_id))
-    .find(Boolean) || ''
+  const groupByIdOf = (view: FocalboardBlock) =>
+    str(asRecord(view.fields)?.groupById || asRecord(view.fields)?.group_by_id)
+  const viewTypeOf = (view: FocalboardBlock) =>
+    str(asRecord(view.fields)?.type || asRecord(view.fields)?.viewType).toLowerCase()
 
-  const statusProp = findProperty(properties, groupById, /status|состоян/i, 'select')
+  // Группа канбан-вида — это колонки доски (статус карточки). Берём именно
+  // board-вид: первый попавшийся view может быть сгруппирован по приоритету.
+  const boardViews = views.filter((view) => viewTypeOf(view) === 'board')
+  const groupedView =
+    boardViews.find((view) => groupByIdOf(view)) || boardViews[0] || views.find((view) => groupByIdOf(view))
+  const groupById = groupedView ? groupByIdOf(groupedView) : ''
+  const viewId = str(groupedView?.id)
+
+  const statusProp = findProperty(properties, groupById, /status|статус|состоян/i, 'select')
+  // Если группировка указывает на приоритет, а свойство статуса есть по имени —
+  // статусом считается именованное свойство, а не группа приоритетов.
+  const statusByName = properties.find((prop) => /status|статус|состоян/i.test(str(prop.name)))
+  const resolvedStatus =
+    statusByName && /priority|приоритет/i.test(str(statusProp?.name))
+      ? statusByName
+      : statusProp || statusByName
   const priorityProp = findProperty(properties, '', /priority|приоритет/i, undefined)
   const typeProp = findProperty(properties, '', /^(type|тип)$/i, undefined)
   const tagsProp =
@@ -177,7 +192,7 @@ export function mapFocalboardCards(
       const id = pickId(block)
       const fields = asRecord(block.fields)
       const rawProps = asRecord(fields?.properties) || {}
-      const statusKey = str(statusProp?.id)
+      const statusKey = str(resolvedStatus?.id)
       const priorityKey = str(priorityProp?.id)
       const typeKey = str(typeProp?.id)
       const tagsKey = str(tagsProp?.id)
@@ -188,7 +203,7 @@ export function mapFocalboardCards(
         id,
         title,
         description: cardDescription(id, blocks, fields),
-        status: resolveSelect(statusProp, rawProps[statusKey]),
+        status: resolveSelect(resolvedStatus, rawProps[statusKey]),
         priority: resolveSelect(priorityProp, rawProps[priorityKey]),
         tags: resolveMulti(tagsProp, rawProps[tagsKey]),
         kind: inferCardKind({ title, icon, typeLabel }),
@@ -204,7 +219,7 @@ export function mapFocalboardCards(
   return {
     cards,
     statuses: unique([
-      ...(statusProp?.options ?? []).map(optionLabel),
+      ...(resolvedStatus?.options ?? []).map(optionLabel),
       ...cards.map((card) => card.status),
     ]),
     priorities: unique([
@@ -215,6 +230,7 @@ export function mapFocalboardCards(
       ...(tagsProp?.options ?? []).map(optionLabel),
       ...cards.flatMap((card) => card.tags),
     ]),
+    viewId: viewId || undefined,
   }
 }
 

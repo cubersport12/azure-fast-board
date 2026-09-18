@@ -76,6 +76,8 @@ async function createFromCard(
     iterationPath?: string
     assignedTo?: string
     areaPath?: string
+    teamId?: string
+    viewId?: string
   },
 ): Promise<MattermostCardImport> {
   const existing = getMattermostCardImport(card.id)
@@ -85,9 +87,10 @@ async function createFromCard(
     card.description.trim() ? textToHtml(card.description) : '',
     mattermostCardUrl(
       getSettings().notifications?.providers?.mattermost?.baseUrl || '',
+      defaults.teamId?.trim() || getSettings().lastMattermostTeamId || '',
       boardId,
+      defaults.viewId || '',
       card.id,
-      getSettings().lastMattermostTeamId,
     ),
   )
   const bug = isBugType(defaults.type)
@@ -156,7 +159,7 @@ export async function importMattermostCards(
   )
   hydrateFromWorkItems(items)
 
-  const { cards } = await listMattermostBoardCards(boardId)
+  const { cards, viewId } = await listMattermostBoardCards(boardId)
   const byId = new Map(cards.map((card) => [card.id, card]))
   const results: MattermostCardImport[] = []
   const defaults = {
@@ -164,6 +167,8 @@ export async function importMattermostCards(
     iterationPath: input.iterationPath,
     assignedTo: input.assignedTo,
     areaPath: input.areaPath,
+    teamId: input.teamId?.trim() || getSettings().lastMattermostTeamId || '',
+    viewId: viewId || '',
   }
 
   for (const cardId of wanted) {

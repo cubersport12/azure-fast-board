@@ -137,14 +137,29 @@ export function plainTextToHtml(text: string) {
     .replace(/\n/g, '<br/>')
 }
 
-export function mattermostCardUrl(baseUrl: string, boardId: string, cardId: string, teamId?: string) {
+/**
+ * Deep-link на карточку в Mattermost Boards в каноничном виде
+ * /boards/team/<team>/<board>/<view>/<card> — иначе MM открывает только
+ * доску без карточки.
+ */
+export function mattermostCardUrl(
+  baseUrl: string,
+  teamId: string,
+  boardId: string,
+  viewId: string,
+  cardId: string,
+) {
   const root = baseUrl.trim().replace(/\/+$/, '').replace(/\/api\/v4\/?$/i, '')
+  const team = teamId.trim()
   const board = boardId.trim()
+  const view = viewId.trim()
   const card = cardId.trim()
-  const team = teamId?.trim() || ''
   if (!root || !board || !card) return ''
+  if (team && view) {
+    return `${root}/boards/team/${encodeURIComponent(team)}/${encodeURIComponent(board)}/${encodeURIComponent(view)}/${encodeURIComponent(card)}`
+  }
   if (team) {
-    return `${root}/boards/workspace/${encodeURIComponent(team)}/${encodeURIComponent(board)}?cardId=${encodeURIComponent(card)}`
+    return `${root}/boards/team/${encodeURIComponent(team)}/${encodeURIComponent(board)}?cardId=${encodeURIComponent(card)}`
   }
   return `${root}/boards/${encodeURIComponent(board)}?cardId=${encodeURIComponent(card)}`
 }

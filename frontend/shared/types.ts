@@ -321,6 +321,8 @@ export interface MattermostBoardCardsResult {
   statuses: string[]
   priorities: string[]
   tags: string[]
+  /** Канбан-вид доски — нужен для deep-link на карточку (/boards/team/…/view/card). */
+  viewId?: string
 }
 
 export interface MattermostCardImport {
@@ -336,6 +338,7 @@ export interface MattermostImportCardsInput {
   iterationPath?: string
   assignedTo?: string
   areaPath?: string
+  teamId?: string
 }
 
 export interface AppUpdateCheckResult {

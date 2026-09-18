@@ -107,7 +107,12 @@ export function AuthenticatedHtml({
 
   return (
     <div
-      className={cn(className, onImageClick && '[&_img]:cursor-zoom-in')}
+      className={cn(
+        // Длинные URL в комментариях переносятся и не ломают ширину контейнера.
+        '[overflow-wrap:anywhere]',
+        className,
+        onImageClick && '[&_img]:cursor-zoom-in',
+      )}
       dangerouslySetInnerHTML={{ __html: resolved }}
       onClick={
         onImageClick
