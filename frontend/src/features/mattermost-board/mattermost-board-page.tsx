@@ -83,7 +83,7 @@ export function MattermostBoardPage() {
   const [channelId, setChannelId] = useState('')
   const [boardId, setBoardId] = useState('')
   const [importType, setImportType] = useState('Bug')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [priorityFilter, setPriorityFilter] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [hydrated, setHydrated] = useState(false)
@@ -159,7 +159,7 @@ export function MattermostBoardPage() {
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase()
     return cards.filter((card) => {
-      if (statusFilter && card.status !== statusFilter) return false
+      if (statusFilter.length && !statusFilter.includes(card.status)) return false
       if (priorityFilter && card.priority !== priorityFilter) return false
       if (tagFilter && !card.tags.includes(tagFilter)) return false
       if (needle && !card.title.toLowerCase().includes(needle) && !card.id.toLowerCase().includes(needle)) {
@@ -185,6 +185,7 @@ export function MattermostBoardPage() {
         iterationPath: input.iterationPath,
         assignedTo: input.assignedTo,
         areaPath: input.areaPath,
+        teamId,
       }),
     onSuccess: async () => {
       await Promise.all([
@@ -242,9 +243,10 @@ export function MattermostBoardPage() {
           card.description.trim() ? plainTextToHtml(card.description) : '',
           mattermostCardUrl(
             settings?.notifications?.providers?.mattermost?.baseUrl || '',
-            boardId,
-            card.id,
             teamId,
+            boardId,
+            cardsQuery.data?.viewId || '',
+            card.id,
           ),
         ),
         tags: card.tags,
@@ -317,7 +319,7 @@ export function MattermostBoardPage() {
           options={(boardsQuery.data ?? []).map((item) => ({ value: item.id, label: item.title }))}
           onChange={(next) => {
             setBoardId(next)
-            setStatusFilter('')
+            setStatusFilter([])
             setPriorityFilter('')
             setTagFilter('')
             persistSelection({ boardId: next })
@@ -342,6 +344,7 @@ export function MattermostBoardPage() {
         <Dropdown
           className="w-full flex-none"
           label="Статус"
+          multiple
           value={statusFilter}
           options={(cardsQuery.data?.statuses ?? []).map((value) => ({ value, label: value }))}
           onChange={setStatusFilter}

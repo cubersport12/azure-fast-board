@@ -74,6 +74,49 @@ describe('focalboard-map', () => {
     expect(result.priorities).toContain('2. MEDIUM')
   })
 
+  it('takes the group from the board view, not the first view grouped by priority', () => {
+    const result = mapFocalboardCards(
+      [
+        { id: 'board1', type: 'board', title: 'ТЕСТ', fields: { cardProperties: properties } },
+        // Первая в списке — таблица, сгруппированная по приоритету.
+        { id: 'view0', parentId: 'board1', type: 'view', fields: { type: 'table', groupById: 'prio' } },
+        { id: 'view1', parentId: 'board1', type: 'view', fields: { type: 'board', groupById: 'status' } },
+        {
+          id: 'card1',
+          parentId: 'board1',
+          type: 'card',
+          title: 'Задача',
+          fields: { properties: { status: 's2', prio: 'p2' } },
+        },
+      ],
+    )
+    expect(result.statuses).toContain('В работе')
+    expect(result.statuses).not.toContain('2. MEDIUM')
+    expect(result.cards[0].status).toBe('В работе')
+    expect(result.priorities).toContain('2. MEDIUM')
+    expect(result.viewId).toBe('view1')
+  })
+
+  it('resolves the cyrillic «Статус» property by name when grouping is lost', () => {
+    const cyrillicProperties = [
+      { id: 'prio', name: 'Приоритет', type: 'select', options: [{ id: 'p1', value: '1. HIGH' }] },
+      {
+        id: 'st',
+        name: 'Статус',
+        type: 'select',
+        options: [{ id: 's9', value: 'Выложено' }],
+      },
+    ]
+    const result = mapFocalboardCards(
+      [
+        { id: 'board1', type: 'board', title: 'ТЕСТ', fields: { cardProperties: cyrillicProperties } },
+        { id: 'card1', parentId: 'board1', type: 'card', title: 'Без вида', fields: { properties: { st: 's9', prio: 'p1' } } },
+      ],
+    )
+    expect(result.statuses).toEqual(['Выложено'])
+    expect(result.cards[0].status).toBe('Выложено')
+  })
+
   it('infers bug vs task from icon', () => {
     expect(inferCardKind({ icon: '❗', title: 'Настройка' })).toBe('Bug')
     expect(inferCardKind({ icon: '⚠️', title: 'Настройка' })).toBe('Task')

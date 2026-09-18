@@ -112,11 +112,17 @@ describe('shared contracts', () => {
     expect(mmCardTag('abc')).toBe('mm:abc')
     expect(cardIdFromMmTag('mm:abc')).toBe('abc')
     expect(
-      mattermostCardUrl('https://mm.example.com/', 'board1', 'card1', 'team1'),
-    ).toBe('https://mm.example.com/boards/workspace/team1/board1?cardId=card1')
-    expect(appendMmImportFooter('Шаги', 'https://mm.example.com/boards/b?cardId=c')).toContain(
-      'Карточка создана из Mattermost Boards',
+      mattermostCardUrl('https://mm.example.com/', 'team1', 'board1', 'view1', 'card1'),
+    ).toBe('https://mm.example.com/boards/team/team1/board1/view1/card1')
+    expect(
+      mattermostCardUrl('https://mm.example.com', 'team1', 'board1', '', 'card1'),
+    ).toBe('https://mm.example.com/boards/team/team1/board1?cardId=card1')
+    expect(mattermostCardUrl('https://mm.example.com', '', 'board1', 'view1', 'card1')).toBe(
+      'https://mm.example.com/boards/board1?cardId=card1',
     )
+    expect(
+      appendMmImportFooter('Шаги', 'https://mm.example.com/boards/b?cardId=c'),
+    ).toContain('Карточка создана из Mattermost Boards')
     expect(appendMmImportFooter('Шаги', 'https://mm.example.com/boards/b?cardId=c')).toContain(
       'href="https://mm.example.com/boards/b?cardId=c"',
     )

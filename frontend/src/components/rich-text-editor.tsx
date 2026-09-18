@@ -200,6 +200,9 @@ export function RichTextEditor({
       attributes: {
         class: cn(
           'tiptap max-w-none px-3 py-2 text-sm text-slate-800 outline-none dark:text-slate-100',
+          // Длинные URL (ссылка из Mattermost и т.п.) переносятся, а не
+          // распирают диалог/контейнер по ширине.
+          '[overflow-wrap:anywhere] [word-break:break-word]',
           '[&_img]:mx-1 [&_img]:inline [&_img]:max-h-80 [&_img]:max-w-full [&_img]:align-middle [&_img]:rounded-lg [&_img]:border',
           '[&_p]:my-1 [&_strong]:font-bold [&_b]:font-bold',
           maxHeight != null && 'overflow-y-auto',
