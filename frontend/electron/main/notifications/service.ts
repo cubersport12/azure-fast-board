@@ -18,6 +18,7 @@ import {
   notificationBelongsToWorkItem,
 } from './format'
 import { isRelevantToMe } from './identity'
+import { realtimeUpdateIsVisible } from '../../../shared/notifications-fields'
 import { deliverToProviders } from './providers'
 import { NotificationsWsClient, type RealtimeBoardEvent } from './ws-client'
 import { isNotificationAllowedType, NOTIFICATION_WORK_ITEM_TYPES } from '../../../shared/work-item-wiql'
@@ -341,6 +342,17 @@ export class NotificationService {
           ` type ${event.workItemType} is not ${NOTIFICATION_WORK_ITEM_TYPES.join('/')}`,
       )
       return
+    }
+
+    if (eventTypeRaw === 'workitem.updated') {
+      const visible = realtimeUpdateIsVisible(event.resource, event.changedFields)
+      if (visible === false) {
+        console.log(
+          `[notifications] skip ${eventTypeRaw} #${event.workItemId ?? '-'} —` +
+            ` displayed fields unchanged (changed: ${event.changedFields?.join(', ') || '?'})`,
+        )
+        return
+      }
     }
 
     if (settings.notifications.onlyAssignedToMe) {

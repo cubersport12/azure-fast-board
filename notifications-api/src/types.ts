@@ -19,6 +19,8 @@ export interface BoardRealtimeEvent {
   createdBy?: string
   createdByUniqueName?: string
   message?: string
+  /** ADO reference names of the fields changed in this event (keys of resource.fields). */
+  changedFields?: string[]
   /** Original Azure DevOps payload (trimmed). */
   resource?: unknown
 }
