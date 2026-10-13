@@ -114,6 +114,11 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
   const [renameName, setRenameName] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState('')
+  const [moveSource, setMoveSource] = useState<SubscribedIteration | null>(null)
+  const [moveTarget, setMoveTarget] = useState('')
+  const [moveBusy, setMoveBusy] = useState(false)
+  const [moveError, setMoveError] = useState('')
+  const [moveProgress, setMoveProgress] = useState({ done: 0, total: 0 })
   const menuRef = useRef<HTMLDivElement>(null)
 
   const subscribed = settings?.subscribedIterations ?? EMPTY_SUBSCRIBED
@@ -158,6 +163,24 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
         description: iteration.path,
       }))
   }, [iterationPaths?.iterations, subscribed])
+
+  /** Цели перемещения — все итерации проекта, кроме спринта-источника. */
+  const moveOptions = useMemo(() => {
+    if (!moveSource) return []
+    const iterations = iterationPaths?.iterations ?? []
+    const options = iterations.length
+      ? iterations.map((iteration) => ({
+          value: iteration.path,
+          label: iteration.name,
+          description: iteration.path,
+        }))
+      : subscribed.map((sprint) => ({
+          value: sprint.path,
+          label: sprint.name,
+          description: sprint.path,
+        }))
+    return options.filter((option) => option.value.toLowerCase() !== moveSource.path.toLowerCase())
+  }, [iterationPaths?.iterations, subscribed, moveSource])
 
   useEffect(() => {
     if (!menuPath) return
@@ -253,6 +276,64 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
     }
   }
 
+  const openMove = (sprint: SubscribedIteration) => {
+    setMenuPath(null)
+    setMoveSource(sprint)
+    setMoveTarget('')
+    setMoveError('')
+    setMoveProgress({ done: 0, total: 0 })
+  }
+
+  const moveCards = async () => {
+    if (!moveSource || !moveTarget) return
+    const api = requireAzureApi()
+    const targetPath = moveTarget
+    setMoveBusy(true)
+    setMoveError('')
+    setMoveProgress({ done: 0, total: 0 })
+    try {
+      const items = await api.listWorkItems({ iterationPath: moveSource.path })
+      setMoveProgress({ done: 0, total: items.length })
+      const failed: number[] = []
+      const applyIteration = (id: number, rev: number) =>
+        api.updateWorkItem({ id, rev, fields: { 'System.IterationPath': targetPath } })
+      let cursor = 0
+      const worker = async () => {
+        while (cursor < items.length) {
+          const item = items[cursor]
+          cursor += 1
+          try {
+            try {
+              await applyIteration(item.id, item.rev)
+            } catch {
+              // Ревизия могла устареть — повторяем со свежей.
+              const fresh = await api.getWorkItem(item.id)
+              await applyIteration(item.id, fresh.rev)
+            }
+          } catch {
+            failed.push(item.id)
+          }
+          setMoveProgress((prev) => ({ ...prev, done: prev.done + 1 }))
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(4, items.length) }, worker))
+      await qc.invalidateQueries({ queryKey: queryKeys.workItems })
+      if (failed.length) {
+        setMoveError(
+          `Перемещено ${items.length - failed.length} из ${items.length}. Не удалось: ${failed
+            .map((id) => `#${id}`)
+            .join(', ')}`,
+        )
+      } else {
+        setMoveSource(null)
+      }
+    } catch (error) {
+      setMoveError(error instanceof Error ? error.message : 'Не удалось переместить карточки')
+    } finally {
+      setMoveBusy(false)
+    }
+  }
+
   return (
     <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
       <div className="mb-1 flex items-center justify-between px-3">
@@ -343,6 +424,16 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
             >
               Переименовать
             </button>
+            <button
+              type="button"
+              className="block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-900"
+              onClick={() => {
+                const sprint = subscribed.find((s) => s.path === menuPath)
+                if (sprint) openMove(sprint)
+              }}
+            >
+              Переместить
+            </button>
           </div>,
           document.body,
         )}
@@ -419,6 +510,60 @@ export function SprintNav({ disabled }: { disabled?: boolean }) {
             </Button>
             <Button type="submit" disabled={renameBusy || !renameName.trim()}>
               {renameBusy ? 'Сохранение…' : 'Сохранить'}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(moveSource)}
+        onClose={() => !moveBusy && setMoveSource(null)}
+        title="Переместить карточки"
+      >
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void moveCards()
+          }}
+        >
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Все карточки спринта «{moveSource?.name}» изменят итерацию на выбранный спринт.
+          </p>
+          {moveError ? (
+            <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-200">
+              {moveError}
+            </div>
+          ) : null}
+          <Dropdown
+            id="sprint-nav-move"
+            favoritesKey="sprint-nav-move"
+            value={moveTarget}
+            options={moveOptions}
+            onChange={setMoveTarget}
+            placeholder="Выберите спринт"
+            emptyLabel="Не выбрано"
+            searchPlaceholder="Поиск спринта…"
+            suggestionsLabel="Suggestions"
+            allowEmpty={false}
+            disabled={moveBusy}
+          />
+          {moveBusy ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Перемещено {moveProgress.done} из {moveProgress.total}…
+            </p>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={moveBusy}
+              onClick={() => setMoveSource(null)}
+            >
+              Отмена
+            </Button>
+            <Button type="submit" disabled={moveBusy || !moveTarget}>
+              {moveBusy ? 'Перемещение…' : 'Переместить'}
             </Button>
           </div>
         </form>

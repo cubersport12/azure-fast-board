@@ -1,4 +1,5 @@
 import type { NotificationEventType, WorkItem } from '../../../shared/types'
+import { workItemFingerprint } from '../../../shared/notifications-fields'
 import { anyIdentityMatch, isRelevantToMe } from './identity'
 
 export interface WorkItemChange {
@@ -82,11 +83,9 @@ export function diffWorkItems(
       }
     }
 
-    const updated =
-      before.rev !== item.rev ||
-      before.state !== item.state ||
-      before.boardColumn !== item.boardColumn ||
-      before.title !== item.title
+    // Only announce updates when a card-visible field actually changed —
+    // a bare rev bump (comment flags, hidden fields) must stay silent.
+    const updated = workItemFingerprint(before) !== workItemFingerprint(item)
 
     if (updated && options.enabledEvents['workitem.updated'] !== false) {
       if (

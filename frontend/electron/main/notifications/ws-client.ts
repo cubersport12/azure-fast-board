@@ -16,6 +16,10 @@ export interface RealtimeBoardEvent {
   createdBy?: string
   createdByUniqueName?: string
   message?: string
+  /** ADO reference names of the fields changed in this event. */
+  changedFields?: string[]
+  /** Original ADO payload — carries oldValue/newValue deltas for workitem.updated. */
+  resource?: unknown
 }
 
 type EventHandler = (event: RealtimeBoardEvent) => void

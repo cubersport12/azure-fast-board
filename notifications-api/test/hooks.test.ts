@@ -40,6 +40,7 @@ describe('mapServiceHookPayload', () => {
       createdByUniqueName: 'sam@corp.local',
       projectId: 'proj-guid',
       collectionId: 'col-guid',
+      changedFields: ['System.Title', 'System.WorkItemType', 'System.State', 'System.AssignedTo', 'System.CreatedBy'],
     })
   })
 
@@ -116,6 +117,7 @@ describe('mapServiceHookPayload', () => {
       workItemTitle: 'Broken build',
       workItemType: 'Bug',
       workItemState: 'Active',
+      changedFields: ['System.Title', 'System.Rev'],
     })
   })
 

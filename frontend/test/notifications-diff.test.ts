@@ -64,8 +64,8 @@ describe('diffWorkItems', () => {
       item({ id: 2, title: 'Other', rev: 1, assignedToUniqueName: 'other@corp' }),
     ]
     const after = [
-      item({ id: 1, title: 'Mine', rev: 2, state: 'Active', assignedToUniqueName: 'me@corp' }),
-      item({ id: 2, title: 'Other', rev: 2, state: 'Active', assignedToUniqueName: 'other@corp' }),
+      item({ id: 1, title: 'Mine', rev: 2, state: 'Resolved', assignedToUniqueName: 'me@corp' }),
+      item({ id: 2, title: 'Other', rev: 2, state: 'Resolved', assignedToUniqueName: 'other@corp' }),
     ]
     const changes = diffWorkItems(before, after, {
       onlyAssignedToMe: true,
@@ -105,6 +105,26 @@ describe('diffWorkItems', () => {
     })
     expect(changes.some((c) => c.eventType === 'workitem.assigned')).toBe(true)
     expect(changes.some((c) => c.eventType === 'workitem.updated')).toBe(true)
+  })
+
+  it('does not announce a bare rev bump without visible field changes', () => {
+    const before = [item({ id: 1, title: 'Bug', rev: 1 })]
+    const after = [item({ id: 1, title: 'Bug', rev: 2 })]
+    const changes = diffWorkItems(before, after, {
+      onlyAssignedToMe: false,
+      enabledEvents: { 'workitem.updated': true },
+    })
+    expect(changes).toHaveLength(0)
+  })
+
+  it('announces description-only changes', () => {
+    const before = [item({ id: 1, title: 'Bug', rev: 1, description: '<p>before</p>' })]
+    const after = [item({ id: 1, title: 'Bug', rev: 2, description: '<p>after</p>' })]
+    const changes = diffWorkItems(before, after, {
+      onlyAssignedToMe: false,
+      enabledEvents: { 'workitem.updated': true },
+    })
+    expect(changes.map((c) => c.eventType)).toEqual(['workitem.updated'])
   })
 
   it('baselines empty/missing snapshots instead of treating the board as created', () => {

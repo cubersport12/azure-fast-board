@@ -157,6 +157,12 @@ export function mapServiceHookPayload(raw: unknown): BoardRealtimeEvent | null {
       ? String(typeRaw)
       : extractWorkItemTypeFromText(messageText) || extractWorkItemTypeFromText(title)
 
+  const rawResourceFields = payload.resource?.fields
+  const changedFields =
+    rawResourceFields && typeof rawResourceFields === 'object' && !Array.isArray(rawResourceFields)
+      ? Object.keys(rawResourceFields)
+      : undefined
+
   return {
     id: String(payload.id || randomUUID()),
     source: 'azure-service-hook',
@@ -178,6 +184,7 @@ export function mapServiceHookPayload(raw: unknown): BoardRealtimeEvent | null {
     createdBy: identityName(fields['System.CreatedBy']),
     createdByUniqueName: identityUnique(fields['System.CreatedBy']),
     message: messageText,
+    changedFields,
     resource: payload.resource,
   }
 }
